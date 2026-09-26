@@ -1,0 +1,74 @@
+{% set c = plan.concepts[idx] %}
+{% set q = c.review if kind == 'review' else c.check %}
+<div class="sb-reveal space-y-5">
+    <div class="space-y-3">
+        <div class="flex items-center justify-between gap-4">
+            <p class="sb-mono text-[11px] uppercase tracking-[0.2em] text-neutral-500">
+                Day {{ plan.day }} · {% if kind == 'review' %}Quick review{% else %}Concept {{ '%02d' | format(idx + 1) }} of {{ '%02d' | format(plan.concepts | length) }}{% endif %}
+            </p>
+            <p class="sb-mono text-xs text-neutral-400">{{ plan.today }} / {{ plan.per_day }} min today</p>
+        </div>
+        <div class="h-px bg-neutral-800">
+            <div class="h-px bg-white transition-all duration-700" style="width: {{ [plan.today * 100 / plan.per_day, 100] | min | round(1) }}%"></div>
+        </div>
+    </div>
+
+    <form hx-post="/study-buddy/plan/{{ plan.id }}/answer"
+          hx-target="#sb-stage"
+          hx-swap="innerHTML show:top"
+          hx-disabled-elt="find button"
+          class="space-y-5 rounded-2xl border border-neutral-800 bg-neutral-950 p-6">
+
+        {% if kind == 'review' %}
+        <div class="space-y-1">
+            <p class="sb-mono text-[10px] uppercase tracking-[0.2em] text-neutral-500">From Day {{ plan.completed[idx].day }} · {{ c.name }}</p>
+            <p class="text-sm text-neutral-400">One question on something you've already learned, so it sticks.</p>
+        </div>
+        {% else %}
+        <div class="space-y-4">
+            <div class="flex items-center gap-3">
+                <span class="flex gap-1" title="Difficulty {{ c.difficulty }} of 3">
+                    {% for k in range(3) %}<span class="h-1.5 w-1.5 rounded-full {{ 'bg-white' if k < c.difficulty else 'bg-neutral-800' }}"></span>{% endfor %}
+                </span>
+                <span class="sb-mono text-[10px] uppercase tracking-[0.16em] text-neutral-500">{{ c.minutes }} min</span>
+            </div>
+            <h3 class="text-3xl font-semibold tracking-tight text-white">{{ c.name }}</h3>
+            <p class="whitespace-pre-line leading-relaxed text-neutral-300">{{ c.lesson }}</p>
+            {% if c.key_terms %}
+            <div class="flex flex-wrap gap-2">
+                {% for t in c.key_terms %}
+                <span class="sb-mono rounded-full border border-neutral-800 px-2.5 py-0.5 text-[11px] text-neutral-400">{{ t }}</span>
+                {% endfor %}
+            </div>
+            {% endif %}
+        </div>
+        <div class="flex items-center gap-3 pt-2">
+            <span class="sb-mono text-[10px] uppercase tracking-[0.2em] text-neutral-500">Check your understanding</span>
+            <span class="h-px flex-1 bg-neutral-900"></span>
+        </div>
+        {% endif %}
+
+        <p class="text-[17px] leading-relaxed text-neutral-100">{{ q.question }}</p>
+
+        <div class="grid gap-2">
+            {% for opt in q.options %}
+            <label class="flex cursor-pointer items-start gap-3 rounded-xl border border-neutral-800 bg-neutral-900/30 p-3.5 transition hover:border-neutral-600 hover:bg-neutral-900 has-[:checked]:border-white has-[:checked]:bg-neutral-900 has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-white/30">
+                <input type="radio" name="choice" value="{{ loop.index0 }}" required class="peer sr-only">
+                <span class="sb-mono flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-neutral-700 text-[11px] text-neutral-400 transition peer-checked:border-white peer-checked:bg-white peer-checked:text-black">{{ "ABCD"[loop.index0] }}</span>
+                <span class="pt-0.5 text-sm leading-relaxed text-neutral-300 peer-checked:text-white">{{ opt }}</span>
+            </label>
+            {% endfor %}
+        </div>
+
+        <div class="flex justify-end">
+            <button class="inline-flex items-center gap-2 rounded-full bg-white px-5 py-2 text-sm font-medium text-black transition hover:bg-neutral-200 disabled:opacity-50">
+                <span class="sb-idle">Check answer</span>
+                <span class="sb-busy">Checking…</span>
+                <svg class="sb-idle" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m13 6 6 6-6 6"/></svg>
+            </button>
+        </div>
+
+        <input type="hidden" name="kind" value="{{ kind }}">
+        <input type="hidden" name="idx" value="{{ idx }}">
+    </form>
+</div>
