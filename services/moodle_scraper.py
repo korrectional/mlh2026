@@ -418,8 +418,12 @@ def extract_assignment_detail(html: str) -> dict:
     Returns cleaner text than the dashboard-level parse — this is the
     full assignment description for AI consumption.
     """
-    soup = BeautifulSoup(html, "html.parser")
     raw_len = len(html)
+
+    # Debug: show what we're actually parsing
+    print(f"      raw HTML preview: {html[:300].strip()!r}")
+
+    soup = BeautifulSoup(html, "html.parser")
 
     # Strip nav, header, footer, script, style noise for a clean read
     for tag in soup.select("script, style, nav, header, footer, .navbar, .footer, .breadcrumb, .block_navigation, #page-footer, .drawer, .block"):
