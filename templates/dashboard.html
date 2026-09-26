@@ -21,6 +21,7 @@
     .assignment-card { transition: border-color 0.2s; }
     .assignment-card:hover { border-color: #525252; }
     textarea { background: #111111; }
+    #results .bg-white, #status-area .bg-white { background-color: #0a0a0a; border-color: #262626; }
     /* Redesign additions */
     [x-cloak] { display: none !important; }
     .dash-details > summary { list-style: none; }
@@ -45,7 +46,11 @@
                     600: '#a3a3a3', 700: '#d4d4d4', 800: '#e5e5e5', 900: '#fafafa' },
             brand: { 50: '#171717', 100: '#262626', 200: '#333333', 300: '#525252', 500: '#d4d4d4', 600: '#fafafa',
                      700: '#e5e5e5', 800: '#fafafa' },
-            red: mono, green: mono, yellow: mono, purple: mono, blue: mono,
+            red: { 50: '#1f0a0a', 100: '#2b0e0e', 200: '#5c1a1a', 300: '#7a1f1f', 400: '#ff5c5c', 500: '#CC0000',
+                   600: '#CC0000', 700: '#ff8a8a', 800: '#ffb3b3', 900: '#ffd6d6' },
+            green: { 50: '#0d1a10', 100: '#11261a', 200: '#1d4d2e', 300: '#166534', 400: '#4ade80', 500: '#22c55e',
+                     600: '#16a34a', 700: '#86efac', 800: '#bbf7d0', 900: '#dcfce7' },
+            yellow: mono, purple: mono, blue: mono, amber: mono,
         });
         tailwind.config = Object.assign({}, cfg, { theme: Object.assign({}, theme, { extend: Object.assign({}, extend, { colors: colors }) }) });
     })();
