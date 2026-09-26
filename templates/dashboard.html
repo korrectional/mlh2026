@@ -8,36 +8,55 @@
     <!-- Header -->
     <div>
         <h1 class="text-2xl font-bold">📋 Dashboard Inspector</h1>
-        <p class="text-sm text-gray-500">Paste your NCSU Moodle dashboard HTML. Find due-soon assignments, get study points, and optionally generate a quiz.</p>
+        <p class="text-sm text-gray-500">
+            Paste your NCSU Moodle (WolfWare) dashboard HTML. Find due-soon assignments and get study points.
+        </p>
     </div>
 
     <!-- Instructions -->
     <div class="bg-blue-50 border border-blue-200 rounded-xl p-4 text-sm text-blue-800">
-        <p class="font-medium mb-1">How it works</p>
+        <p class="font-medium mb-1">How to get your dashboard HTML</p>
         <ol class="list-decimal list-inside space-y-1 text-blue-700">
-            <li>Log into <strong>Moodle NCSU</strong> in your browser</li>
-            <li>Go to your <strong>Dashboard</strong></li>
-            <li>Open DevTools (F12) → copy the <code class="bg-blue-100 px-1 rounded">&lt;body&gt;</code> or page HTML</li>
-            <li>Paste it below and click <strong>Inspect</strong></li>
+            <li>Log into <strong>WolfWare</strong> → go to your <strong>Dashboard</strong></li>
+            <li>Open DevTools (<kbd class="bg-blue-100 px-1 rounded font-mono">F12</kbd>) → <strong>Elements</strong> tab</li>
+            <li>Right-click <code class="bg-blue-100 px-1 rounded font-mono">&lt;body&gt;</code> → <strong>Copy → Copy OuterHTML</strong></li>
+            <li>Paste below and click <strong>Inspect</strong></li>
         </ol>
     </div>
 
     <!-- Paste area -->
     <div class="bg-white rounded-xl border p-5">
-        <label class="block text-sm font-medium text-gray-700 mb-2">Moodle Dashboard HTML</label>
+        <label class="block text-sm font-medium text-gray-700 mb-2">
+            Moodle Dashboard HTML
+            <span class="text-gray-400 font-normal">(paste or <button @click="loadSample()" class="text-brand-600 hover:underline cursor-pointer">load sample</button>)</span>
+        </label>
         <textarea id="dashboard-html" rows="8"
                   class="w-full border rounded-lg p-3 text-sm font-mono text-gray-700 focus:ring-2 focus:ring-brand-500 focus:border-brand-500"
                   placeholder="Paste the page HTML here..."></textarea>
-        <button @click="inspect()" :disabled="inspecting"
-                class="mt-3 px-5 py-2 bg-brand-600 text-white rounded-lg text-sm font-medium hover:bg-brand-700 transition disabled:opacity-50">
-            <span x-text="inspecting ? 'Inspecting...' : '🔍 Inspect Dashboard'"></span>
-        </button>
+
+        <div class="mt-3 flex gap-2 flex-wrap">
+            <button @click="inspect()" :disabled="inspecting"
+                    class="px-5 py-2 bg-brand-600 text-white rounded-lg text-sm font-medium hover:bg-brand-700 transition disabled:opacity-50">
+                <span x-text="inspecting ? 'Processing...' : '🔍 Inspect Dashboard'"></span>
+            </button>
+            <button @click="scrapeOnly()" :disabled="inspecting"
+                    class="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-200 border transition disabled:opacity-50">
+                📋 Scrape Only (no AI)
+            </button>
+        </div>
+        <p class="text-xs text-gray-400 mt-2">
+            "Scrape Only" just parses assignments — no Gemini, no API key needed.
+        </p>
+    </div>
+
+    <!-- Status bar (hidden until used) -->
+    <div id="status" class="hidden text-sm text-gray-500 bg-white rounded-lg border px-4 py-2.5 flex items-center gap-2">
+        <span class="w-2 h-2 bg-green-400 rounded-full"></span>
+        <span id="status-text">Ready</span>
     </div>
 
     <!-- Results -->
-    <div id="results" x-show="hasResults">
-        <!-- HTMX will swap content here in future; Alpine renders stub for now -->
-    </div>
+    <div id="results" class="space-y-4"></div>
 
 </div>
 
@@ -46,6 +65,18 @@ function dashboardInspector() {
     return {
         inspecting: false,
         hasResults: false,
+
+        async loadSample() {
+            try {
+                const resp = await fetch('/dashboard/debug/sample-raw');
+                const sampleHtml = await resp.text();
+                document.getElementById('dashboard-html').value = sampleHtml;
+                await this.scrapeOnly();
+            } catch (err) {
+                console.error('Failed to load sample:', err);
+                alert('Could not load sample HTML.');
+            }
+        },
 
         async inspect() {
             const html = document.getElementById('dashboard-html').value;
@@ -69,7 +100,36 @@ function dashboardInspector() {
                 this.hasResults = true;
             } catch (err) {
                 document.getElementById('results').innerHTML =
-                    `<div class="p-4 bg-red-50 text-red-700 rounded">Inspection failed: ${err.message}</div>`;
+                    `<div class="p-4 bg-red-50 text-red-700 rounded border border-red-200">Inspection failed: ${err.message}</div>`;
+                this.hasResults = true;
+            } finally {
+                this.inspecting = false;
+            }
+        },
+
+        async scrapeOnly() {
+            const html = document.getElementById('dashboard-html').value;
+            if (!html.trim()) {
+                alert('Paste your Moodle dashboard HTML first.');
+                return;
+            }
+
+            this.inspecting = true;
+
+            const formData = new FormData();
+            formData.append('dashboard_html', html);
+
+            try {
+                const resp = await fetch('/dashboard/scrape-only', {
+                    method: 'POST',
+                    body: formData
+                });
+                const htmlResult = await resp.text();
+                document.getElementById('results').innerHTML = htmlResult;
+                this.hasResults = true;
+            } catch (err) {
+                document.getElementById('results').innerHTML =
+                    `<div class="p-4 bg-red-50 text-red-700 rounded border border-red-200">Scrape failed: ${err.message}</div>`;
                 this.hasResults = true;
             } finally {
                 this.inspecting = false;
