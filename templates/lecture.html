@@ -9,7 +9,7 @@
     <div class="flex items-center justify-between">
         <div>
             <h1 class="text-2xl font-bold">🎙️ Live Lecture Note-Taker</h1>
-            <p class="text-sm text-gray-500">Record a lecture and follow the live transcript as you speak.</p>
+            <p class="text-sm text-gray-500">Record a lecture to generate full transcripts, AI study notes, and MP3 audio.</p>
         </div>
         <div class="flex gap-2">
             <button type="button" @click="toggleRecording" :disabled="starting || downloading"
@@ -33,7 +33,7 @@
     </div>
 
     <p class="text-sm text-blue-800 bg-blue-50 border border-blue-200 rounded-lg px-4 py-3">
-        One microphone stream is transcribed locally and stored on this server. Stop recording to download it as an MP3. The first recording may take a moment while the speech model loads.
+        Record your lecture audio. After you stop recording, the server transcribes the full audio, generates structured notes, and prepares your MP3 download.
     </p>
 
     <p x-show="transcriptionError" x-text="transcriptionError" role="alert"
@@ -50,20 +50,26 @@
         <!-- Structured Notes -->
         <div class="bg-white rounded-xl border p-5 min-h-[400px]">
             <h2 class="text-sm font-semibold text-gray-400 uppercase tracking-wide mb-3">Notes</h2>
-            <p class="text-gray-400 text-sm italic py-8 text-center">Structured notes will appear here when note generation is available.</p>
+            <p x-show="notesLoading" class="text-sm text-gray-500 italic py-8 text-center">Generating notes with Gemini...</p>
+            <p x-show="notesError" x-text="notesError" role="alert" class="text-sm text-red-700 bg-red-50 rounded-lg p-3"></p>
+            <div x-show="notes" x-text="notes" class="text-sm text-gray-800 whitespace-pre-wrap leading-relaxed"></div>
+            <p x-show="!notes && !notesLoading && !notesError" class="text-gray-400 text-sm italic py-8 text-center">
+                Notes will appear here after you stop recording.
+            </p>
         </div>
 
-        <!-- Live transcript -->
+        <!-- Transcript -->
         <div class="bg-white rounded-xl border p-5 min-h-[400px]">
-            <h2 class="text-sm font-semibold text-gray-400 uppercase tracking-wide mb-3">Live Transcript</h2>
-            <div class="space-y-3" aria-live="polite">
+            <h2 class="text-sm font-semibold text-gray-400 uppercase tracking-wide mb-3">Transcript</h2>
+            <p x-show="transcriptionLoading" class="text-sm text-gray-500 italic py-8 text-center">Transcribing full lecture audio...</p>
+            <div class="space-y-3" aria-live="polite" x-show="!transcriptionLoading">
                 <template x-for="(entry, index) in transcript" :key="index">
-                    <p class="p-3 bg-gray-50 rounded-lg border-l-4 border-l-brand-500 text-sm text-gray-800" x-text="entry"></p>
+                    <p class="p-3 bg-gray-50 rounded-lg border-l-4 border-l-brand-500 text-sm text-gray-800 whitespace-pre-wrap leading-relaxed" x-text="entry"></p>
                 </template>
-                <p x-show="partialText" x-text="partialText" class="p-3 bg-brand-50 rounded-lg text-sm italic text-gray-600"></p>
-                <p x-show="transcript.length === 0 && !partialText" class="text-gray-400 text-sm italic py-8 text-center">
-                    Speech will appear here as it is transcribed.
+                <p x-show="transcript.length === 0 && !transcriptionLoading && !transcriptionError" class="text-gray-400 text-sm italic py-8 text-center">
+                    Transcript will appear here after you stop recording.
                 </p>
+                <p x-show="transcriptionStatus" x-text="transcriptionStatus" class="text-xs text-gray-500"></p>
             </div>
         </div>
 
@@ -92,14 +98,17 @@ function lectureRecorder() {
         receivedChunks: 0,
         receivedBytes: 0,
         transcript: [],
-        partialText: '',
+        transcriptionLoading: false,
         transcriptionError: '',
-        readyResolve: null,
-        readyReject: null,
+        transcriptionStatus: '',
+        notes: '',
+        notesLoading: false,
+        notesError: '',
         stream: null,
         audioContext: null,
         source: null,
         processor: null,
+        muteGain: null,
         resampleBuffer: [],
         resamplePosition: 0,
         elapsed: '00:00',
@@ -145,25 +154,30 @@ function lectureRecorder() {
                     if (message.type === 'audio_received') {
                         this.receivedChunks = message.chunks;
                         this.receivedBytes = message.total_bytes;
-                    } else if (message.type === 'ready') {
-                        this.readyResolve?.();
-                        this.readyResolve = null;
-                        this.readyReject = null;
-                    } else if (message.type === 'partial') {
-                        this.partialText = message.text;
-                    } else if (message.type === 'final') {
-                        this.transcript.push(message.text);
-                        this.partialText = '';
+                    } else if (message.type === 'transcript') {
+                        if (Array.isArray(message.text)) {
+                            this.transcript = message.text;
+                        } else if (typeof message.text === 'string') {
+                            const parts = message.text.split('\n\n').map(s => s.trim()).filter(Boolean);
+                            this.transcript = parts.length > 0 ? parts : [message.text];
+                        }
+                        this.transcriptionLoading = false;
+                        this.transcriptionStatus = '';
                     } else if (message.type === 'transcription_error') {
                         this.transcriptionError = message.message;
-                        this.readyReject?.(new Error(message.message));
-                        this.readyResolve = null;
-                        this.readyReject = null;
+                        this.transcriptionLoading = false;
+                    } else if (message.type === 'transcription_status') {
+                        this.transcriptionStatus = message.message;
                     } else if (message.type === 'recording_stopped') {
-                        this.partialText = '';
                         this.starting = false;
                         this.recordingAvailable = this.sentAudio;
-                        this.status = this.recordingAvailable ? 'Recording ready to download as MP3.' : 'No audio was captured.';
+                        this.status = this.recordingAvailable ? 'Processing recording. MP3 ready for download.' : 'No audio was captured.';
+                    } else if (message.type === 'notes') {
+                        this.notes = message.text;
+                        this.notesLoading = false;
+                    } else if (message.type === 'notes_error') {
+                        this.notesError = message.message;
+                        this.notesLoading = false;
                     } else if (message.type === 'download_started') {
                         this.expectedDownloadBytes = message.total_bytes;
                         this.downloadChunks = [];
@@ -185,9 +199,6 @@ function lectureRecorder() {
                 };
                 socket.onclose = () => {
                     if (this.ws !== socket) return;
-                    this.readyReject?.(new Error('WebSocket connection closed'));
-                    this.readyResolve = null;
-                    this.readyReject = null;
                     if (this.recording) {
                         this.connectionLost = true;
                         this.stopRecording();
@@ -195,19 +206,26 @@ function lectureRecorder() {
                         this.recordingAvailable = false;
                         this.downloading = false;
                         this.downloadChunks = [];
+                        if (this.notesLoading) {
+                            this.notesLoading = false;
+                            this.notesError = 'Connection lost before notes could be generated.';
+                        }
+                        if (this.transcriptionLoading) {
+                            this.transcriptionLoading = false;
+                            this.transcriptionError = 'Connection lost before transcription could be completed.';
+                        }
                         this.status = 'Server connection lost. Recording unavailable for download.';
                         this.starting = false;
+                    } else if (this.notesLoading) {
+                        this.notesLoading = false;
+                        this.notesError = 'Connection lost before notes could be generated.';
+                    } else if (this.transcriptionLoading) {
+                        this.transcriptionLoading = false;
+                        this.transcriptionError = 'Connection lost before transcription could be completed.';
                     }
                 };
 
-                const ready = new Promise((resolve, reject) => {
-                    this.readyResolve = resolve;
-                    this.readyReject = reject;
-                });
                 socket.send(JSON.stringify({ type: 'start', sample_rate: 16000 }));
-                this.status = 'Loading local speech model...';
-                await ready;
-
                 this.status = 'Opening microphone...';
                 this.stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1 } });
                 if (socket.readyState !== WebSocket.OPEN) {
@@ -248,8 +266,11 @@ function lectureRecorder() {
                     socket.send(pcm);
                     this.sentAudio = true;
                 };
+                this.muteGain = this.audioContext.createGain();
+                this.muteGain.gain.value = 0;
                 this.source.connect(this.processor);
-                this.processor.connect(this.audioContext.destination);
+                this.processor.connect(this.muteGain);
+                this.muteGain.connect(this.audioContext.destination);
                 await this.audioContext.resume();
                 if (this.ws !== socket || socket.readyState !== WebSocket.OPEN) throw new Error('WebSocket connection closed');
                 this.recordingAvailable = false;
@@ -257,12 +278,15 @@ function lectureRecorder() {
                 this.downloadChunks = [];
                 this.connectionLost = false;
                 this.transcriptionError = '';
+                this.transcriptionStatus = '';
                 this.transcript = [];
-                this.partialText = '';
+                this.notes = '';
+                this.notesError = '';
+                this.notesLoading = false;
                 this.receivedChunks = 0;
                 this.receivedBytes = 0;
                 this.recording = true;
-                this.status = 'Recording & transcribing locally — click Stop when finished';
+                this.status = 'Recording — click Stop when finished';
                 this.seconds = 0;
                 this.elapsed = '00:00';
                 this.timerInterval = setInterval(() => {
@@ -273,11 +297,8 @@ function lectureRecorder() {
                 this.releaseMicrophone();
                 this.ws?.close();
                 this.ws = null;
-                this.readyResolve = null;
-                this.readyReject = null;
                 this.status = error.message.includes('WebSocket')
                     ? 'Could not connect to the local server. Try again.'
-                    : error.message.includes('speech model') ? error.message
                     : 'Microphone unavailable. Allow access and try again.';
             } finally {
                 this.starting = false;
@@ -291,10 +312,18 @@ function lectureRecorder() {
             clearInterval(this.timerInterval);
             this.releaseMicrophone();
             if (this.ws?.readyState === WebSocket.OPEN && this.sentAudio) {
-                this.status = 'Finishing transcription...';
+                this.status = 'Processing full audio for transcript and notes...';
+                this.notesLoading = true;
+                this.transcriptionLoading = true;
+                this.notesError = '';
+                this.transcriptionError = '';
+                this.transcript = [];
+                this.notes = '';
                 this.ws.send(JSON.stringify({ type: 'stop' }));
             } else {
                 this.ws?.close();
+                this.notesLoading = false;
+                this.transcriptionLoading = false;
                 this.status = this.connectionLost ? 'Server connection lost.' : 'No audio was captured.';
                 this.starting = false;
             }
@@ -312,8 +341,10 @@ function lectureRecorder() {
             if (this.processor) this.processor.onaudioprocess = null;
             this.source?.disconnect();
             this.processor?.disconnect();
+            this.muteGain?.disconnect();
             this.source = null;
             this.processor = null;
+            this.muteGain = null;
             this.audioContext?.close();
             this.audioContext = null;
             this.stream?.getTracks().forEach(track => track.stop());

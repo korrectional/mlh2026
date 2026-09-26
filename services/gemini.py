@@ -28,7 +28,7 @@ def _get_client():
         return None
 
 
-DEFAULT_MODEL = "gemini-2.0-flash"
+DEFAULT_MODEL = "gemini-3.6-flash"
 
 
 async def ask_gemini(
@@ -44,7 +44,7 @@ async def ask_gemini(
         prompt: The main instruction / user question.
         context: Optional background context (e.g. assignment text, notes).
         system_prompt: Optional system-level instruction.
-        model: Gemini model name (default: gemini-2.0-flash).
+        model: Gemini model name (default: gemini-3.6-flash).
 
     Returns:
         Response text string, or an error/fallback message.

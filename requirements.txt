@@ -8,7 +8,7 @@ pyautogui
 pynput
 opencv-python-headless
 sounddevice
-RealtimeSTT[recommended]>=1.1,<2
+SpeechRecognition>=3.14,<4
 lameenc>=1.8,<2
 mss
 python-dotenv

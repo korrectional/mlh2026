@@ -1,10 +1,58 @@
-"""Local transcription and MP3 encoding for browser PCM audio."""
-
-from threading import Event, Thread
+"""Google Web Speech transcription and MP3 encoding for browser PCM audio."""
 
 import lameenc
 
 SAMPLE_RATE = 16000
+SEGMENT_SECONDS = 15
+SEGMENT_BYTES = SAMPLE_RATE * 2 * SEGMENT_SECONDS
+
+
+class SpeechServiceError(Exception):
+    """The Google Web Speech service could not transcribe a segment."""
+
+
+def transcribe_audio(pcm: bytes) -> str:
+    """Recognize 16-bit mono PCM audio using SpeechRecognition."""
+    try:
+        import speech_recognition as sr
+    except ImportError as exc:
+        raise SpeechServiceError("Install SpeechRecognition to enable transcription.") from exc
+
+    if not pcm or len(pcm) < 2:
+        return ""
+
+    recognizer = sr.Recognizer()
+    recognizer.operation_timeout = 20
+
+    if len(pcm) <= SEGMENT_BYTES:
+        audio = sr.AudioData(pcm, SAMPLE_RATE, 2)
+        try:
+            return recognizer.recognize_google(audio, language="en-US")
+        except sr.UnknownValueError:
+            return ""
+        except sr.RequestError as exc:
+            raise SpeechServiceError("Google speech recognition is unavailable. Check your internet connection.") from exc
+
+    # If the full recording is longer than 15 seconds, transcribe across segments
+    results = []
+    chunk_size = SEGMENT_BYTES
+    for offset in range(0, len(pcm), chunk_size):
+        chunk = pcm[offset:offset + chunk_size]
+        if len(chunk) % 2 != 0:
+            chunk = chunk[:-1]
+        if len(chunk) < SAMPLE_RATE * 2:  # skip sub-second trailing noise
+            continue
+        audio = sr.AudioData(chunk, SAMPLE_RATE, 2)
+        try:
+            text = recognizer.recognize_google(audio, language="en-US")
+            if text:
+                results.append(text)
+        except sr.UnknownValueError:
+            continue
+        except sr.RequestError:
+            continue
+
+    return " ".join(results)
 
 
 def encode_mp3(pcm: bytes) -> bytes:
@@ -19,69 +67,3 @@ def encode_mp3(pcm: bytes) -> bytes:
         output.extend(encoder.encode(pcm[offset:offset + 64 * 1024]))
     output.extend(encoder.flush())
     return bytes(output)
-
-
-class AudioProcessor:
-    """Process one lecture stream with RealtimeSTT's external-audio API."""
-
-    def __init__(self, emit):
-        self.emit = emit
-        self.recorder = None
-        self.thread = None
-        self.stopping = Event()
-        self.last_partial = ""
-
-    def start(self):
-        # Delay loading models until a lecture actually starts.
-        from RealtimeSTT import AudioToTextRecorder
-
-        self.recorder = AudioToTextRecorder(
-            use_microphone=False,
-            model="tiny.en",
-            language="en",
-            device="cpu",
-            compute_type="int8",
-            silero_backend="raw_onnx",
-            enable_realtime_transcription=True,
-            use_main_model_for_realtime=True,
-            realtime_processing_pause=0.5,
-            on_realtime_transcription_update=self._on_partial,
-            spinner=False,
-            no_log_file=True,
-        )
-        self.thread = Thread(target=self._listen, daemon=True)
-        self.thread.start()
-
-    def process_audio_chunk(self, pcm: bytes):
-        """Feed a 16 kHz mono PCM packet in arrival order."""
-        self.recorder.feed_audio(pcm, original_sample_rate=SAMPLE_RATE)
-
-    def _on_partial(self, text):
-        if text and text != self.last_partial and not self.stopping.is_set():
-            self.last_partial = text
-            self.emit("partial", text)
-
-    def _listen(self):
-        try:
-            while not self.stopping.is_set():
-                text = self.recorder.text()
-                if text:
-                    self.last_partial = ""
-                    self.emit("final", text)
-        except Exception:
-            if not self.stopping.is_set():
-                self.emit("transcription_error", "Local transcription failed.")
-
-    def close(self):
-        """Finalize the current utterance and release model workers."""
-        self.stopping.set()
-        if self.recorder is None:
-            return
-        try:
-            self.recorder.flush_audio_input()
-            self.recorder.drain_audio_input(timeout=3)
-            self.recorder.stop()
-            if self.thread:
-                self.thread.join(timeout=10)
-        finally:
-            self.recorder.shutdown()
