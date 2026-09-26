@@ -6,11 +6,16 @@ Flow:
   2. Backend parses it → returns list of assignments with due dates
   3. User clicks "Study Points" or "Generate Quiz" for an assignment
   4. Gemini generates the content → returned as HTML snippets via HTMX
+
+Cache: scraped data is saved to a JSON file so page reloads don't
+re-trigger the PyAutoGUI scraping.
 """
 
 from fastapi import APIRouter, Request, Form
 from fastapi.responses import HTMLResponse
 from pathlib import Path
+import json as _json
+from datetime import datetime as _datetime
 
 from services.moodle_scraper import parse_dashboard, extract_assignment_detail, enrich_assignments_with_descriptions
 from services.gemini import ask_gemini, ask_gemini_structured
@@ -34,11 +39,54 @@ async def render_template(name: str, request: Request, **extra) -> HTMLResponse:
     return HTMLResponse(template.render(**context))
 
 
+# ── Cache (persists scraped data across page reloads) ─────────────────
+
+_CACHE_FILE = Path(__file__).resolve().parent.parent / "dashboard_cache.json"
+
+
+def _save_cache(assignments: list[dict]) -> None:
+    """Save scraped assignments + timestamp to a JSON cache file."""
+    cache = {
+        "timestamp": _datetime.now().isoformat(),
+        "assignments": assignments,
+    }
+    _CACHE_FILE.write_text(_json.dumps(cache, indent=2, ensure_ascii=False), encoding="utf-8")
+
+
+def _load_cache() -> dict | None:
+    """Load cached assignments. Returns None if no cache or it's corrupt."""
+    if not _CACHE_FILE.exists():
+        return None
+    try:
+        data = _json.loads(_CACHE_FILE.read_text(encoding="utf-8"))
+        if "assignments" in data and "timestamp" in data:
+            return data
+    except Exception:
+        pass
+    return None
+
+
 # ── Page ───────────────────────────────────────────────────────────────
 
 @router.get("/", response_class=HTMLResponse)
 async def dashboard_page(request: Request):
-    return await render_template("dashboard.html", request=request)
+    cache = _load_cache()
+    cached_html = ""
+    cached_time = ""
+    if cache and cache.get("assignments"):
+        cached_html = _render_cards(cache["assignments"])
+        try:
+            ts = _datetime.fromisoformat(cache["timestamp"])
+            cached_time = ts.strftime("%b %d, %Y at %I:%M %p")
+        except Exception:
+            cached_time = cache["timestamp"]
+
+    return await render_template(
+        "dashboard.html",
+        request=request,
+        cached_html=cached_html,
+        cached_time=cached_time,
+    )
 
 
 # ── Debug: load sample HTML ──────────────────────────────────────────
@@ -120,6 +168,7 @@ async def grab_moodle():
                 assignments = grab_assignment_descriptions(assignments, load_wait=2)
                 assignments = enrich_assignments_with_descriptions(assignments)
                 _print_descriptions(assignments)
+                _save_cache(assignments)
             except Exception as e:
                 print(f"  ⚠️  Assignment description enrichment failed: {e}")
 
@@ -133,59 +182,10 @@ async def grab_moodle():
                 </p>
             </div>'''.format(len(html))
 
-        # Render assignment cards
-        sorted_assignments = sorted(
-            assignments,
-            key=lambda a: (0 if a.get("overdue") else 1, _parse_date(a.get("due_date", ""))),
-        )
+        # Render assignment cards (shared helper)
+        cards_html = _render_cards(assignments)
 
-        cards_html = ""
-        for i, a in enumerate(sorted_assignments):
-            overdue_badge = (
-                '<span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800">Overdue</span>'
-                if a.get("overdue") else ""
-            )
-            due = _fmt_date(a.get("due_date", ""))
-            course = a.get("course", "") or "Unknown course"
-            title = a.get("title", "Untitled")
-            url = a.get("url", "")
-
-            cards_html += f'''
-            <div class="bg-white rounded-xl border p-5 hover:shadow-md transition assignment-card"
-                 x-data="{{ open: false }}" id="assignment-{i}">
-
-                <div class="flex items-start justify-between gap-4">
-                    <div class="min-w-0 flex-1">
-                        <div class="flex items-center gap-2 flex-wrap">
-                            <h3 class="text-base font-semibold text-gray-900 truncate">{title}</h3>
-                            {overdue_badge}
-                        </div>
-                        <p class="text-sm text-gray-500 mt-0.5">
-                            <span class="inline-flex items-center gap-1">📚 {course}</span>
-                            <span class="mx-2">·</span>
-                            <span class="inline-flex items-center gap-1">📅 {due}</span>
-                        </p>
-                    </div>
-                </div>
-
-                <div class="mt-3 flex gap-2 flex-wrap">
-                    <button hx-post="/dashboard/study-points" hx-target="#assignment-{i} .results-area"
-                            hx-vals='{{ "assignment": "{_escape_json(title)}", "course": "{_escape_json(course)}", "due_date": "{_escape_json(_fmt_date(a.get('due_date', '')))}", "description": "{_escape_json(a.get('description', ''))}" }}'
-                            class="px-3 py-1.5 text-xs font-medium rounded-lg bg-brand-50 text-brand-700 hover:bg-brand-100 border border-brand-200 transition">
-                        📚 Study Points
-                    </button>
-                    <button hx-post="/dashboard/quiz" hx-target="#assignment-{i} .results-area"
-                            hx-vals='{{ "assignment": "{_escape_json(title)}", "course": "{_escape_json(course)}", "due_date": "{_escape_json(_fmt_date(a.get('due_date', '')))}", "description": "{_escape_json(a.get('description', ''))}" }}'
-                            class="px-3 py-1.5 text-xs font-medium rounded-lg bg-green-50 text-green-700 hover:bg-green-100 border border-green-200 transition">
-                        📝 Generate Quiz
-                    </button>
-                </div>
-
-                <div class="results-area mt-3"></div>
-            </div>
-            '''
-
-        return f'''
+        return f"""
         <div class="space-y-4">
             <div class="flex items-center justify-between">
                 <h2 class="text-lg font-bold text-gray-900">
@@ -196,7 +196,7 @@ async def grab_moodle():
             {cards_html}
         </div>
         {_CONSOLE_DUMP}
-        '''
+        """
 
     except Exception as e:
         return f'''
@@ -287,76 +287,12 @@ async def inspect_dashboard(dashboard_html: str = Form(...)):
         </div>
         """
 
-    # Sort: overdue first, then by parsed date
-    sorted_assignments = sorted(
-        assignments,
-        key=lambda a: (0 if a.get("overdue") else 1, _parse_date(a.get("due_date", ""))),
-    )
-
-    cards_html = ""
-    for i, a in enumerate(sorted_assignments):
-        overdue_badge = (
-            '<span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800">Overdue</span>'
-            if a.get("overdue") else ""
-        )
-        due = _fmt_date(a.get("due_date", ""))
-        course = a.get("course", "") or "Unknown course"
-        title = a.get("title", "Untitled")
-        url = a.get("url", "")
-
-        cards_html += f"""
-        <div class="bg-white rounded-xl border p-5 hover:shadow-md transition assignment-card"
-             x-data="{{ open: false }}" id="assignment-{i}">
-
-            <div class="flex items-start justify-between gap-4">
-                <div class="min-w-0 flex-1">
-                    <div class="flex items-center gap-2 flex-wrap">
-                        <h3 class="text-base font-semibold text-gray-900 truncate">{f'<a href="{url}" target="_blank" class="hover:text-brand-600 transition">{title}</a>' if url else title}</h3>
-                        {overdue_badge}
-                    </div>
-                    <p class="text-sm text-gray-500 mt-0.5">
-                        <span class="inline-flex items-center gap-1">📚 {course}</span>
-                        <span class="mx-2">·</span>
-                        <span class="inline-flex items-center gap-1">📅 {due}</span>
-                    </p>
-                </div>
-            </div>
-
-            <div class="mt-3 flex gap-2 flex-wrap">
-                <button hx-post="/dashboard/study-points" hx-target="#assignment-{i} .results-area"
-                        hx-vals='{{"assignment": "{_escape_json(title)}", "course": "{_escape_json(course)}", "due_date": "{_escape_json(due)}", "description": "{_escape_json(a.get('description', ''))}"}}'
-                        hx-indicator="#spinner-{i}"
-                        class="px-3 py-1.5 text-xs font-medium rounded-lg bg-brand-50 text-brand-700 hover:bg-brand-100 border border-brand-200 transition">
-                    📚 Study Points
-                </button>
-                <button hx-post="/dashboard/quiz" hx-target="#assignment-{i} .results-area"
-                        hx-vals='{{"assignment": "{_escape_json(title)}", "course": "{_escape_json(course)}", "due_date": "{_escape_json(due)}", "description": "{_escape_json(a.get('description', ''))}"}}'
-                        hx-indicator="#spinner-{i}"
-                        class="px-3 py-1.5 text-xs font-medium rounded-lg bg-green-50 text-green-700 hover:bg-green-100 border border-green-200 transition">
-                    📝 Generate Quiz
-                </button>
-                {"""<button hx-post="/dashboard/grab-instructions" hx-target="#assignment-{i} .results-area"
-                        hx-vals='{{"url": "{_escape_json(url)}", "title": "{_escape_json(title)}"}}'
-                        hx-indicator="#spinner-{i}"
-                        class="px-3 py-1.5 text-xs font-medium rounded-lg bg-purple-50 text-purple-700 hover:bg-purple-100 border border-purple-200 transition">
-                    📥 Grab Instructions
-                </button>""" if url else ""}
-                <div id="spinner-{i}" class="htmx-indicator">
-                    <div class="w-4 h-4 border-2 border-brand-200 border-t-brand-600 rounded-full animate-spin"></div>
-                </div>
-            </div>
-
-            <div class="results-area mt-3"></div>
-        </div>
-        """
+    # Render assignment cards (shared helper)
+    cards_html = _render_cards(assignments)
+    _save_cache(assignments)
 
     return f"""
     <div class="space-y-4">
-        <div class="flex items-center justify-between">
-            <h2 class="text-lg font-bold text-gray-900">
-                📋 Found {len(assignments)} assignment{'s' if len(assignments) != 1 else ''}
-            </h2>
-        </div>
         {cards_html}
     </div>
     """
@@ -762,6 +698,84 @@ def _escape_html(text: str) -> str:
     """Escape a string for safe embedding in HTML."""
     import html as html_mod
     return html_mod.escape(text)
+
+
+# ── Render assignment cards (shared between grab, inspect, cache) ─────
+
+def _render_cards(assignments: list[dict]) -> str:
+    """Render a list of assignment dicts into HTML card snippets."""
+    sorted_assignments = sorted(
+        assignments,
+        key=lambda a: (0 if a.get("overdue") else 1, _parse_date(a.get("due_date", ""))),
+    )
+
+    cards_html = ""
+    for i, a in enumerate(sorted_assignments):
+        overdue_badge = (
+            '<span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800">Overdue</span>'
+            if a.get("overdue") else ""
+        )
+        due = _fmt_date(a.get("due_date", ""))
+        course = a.get("course", "") or "Unknown course"
+        title = a.get("title", "Untitled")
+        url = a.get("url", "")
+
+        cards_html += f'''
+        <div class="bg-white rounded-xl border p-5 hover:shadow-md transition assignment-card"
+             x-data="{{ open: false }}" id="assignment-{i}">
+
+            <div class="flex items-start justify-between gap-4">
+                <div class="min-w-0 flex-1">
+                    <div class="flex items-center gap-2 flex-wrap">
+                        <h3 class="text-base font-semibold text-gray-900 truncate">{f'<a href="{url}" target="_blank" class="hover:text-brand-600 transition">{title}</a>' if url else title}</h3>
+                        {overdue_badge}
+                    </div>
+                    <p class="text-sm text-gray-500 mt-0.5">
+                        <span class="inline-flex items-center gap-1">📚 {course}</span>
+                        <span class="mx-2">·</span>
+                        <span class="inline-flex items-center gap-1">📅 {due}</span>
+                    </p>
+                </div>
+            </div>
+
+            <div class="mt-3 flex gap-2 flex-wrap">
+                <button hx-post="/dashboard/study-points" hx-target="#assignment-{i} .results-area"
+                        hx-vals='{{"assignment": "{_escape_json(title)}", "course": "{_escape_json(course)}", "due_date": "{_escape_json(due)}", "description": "{_escape_json(a.get('description', ''))}"}}'
+                        hx-indicator="#spinner-{i}"
+                        class="px-3 py-1.5 text-xs font-medium rounded-lg bg-brand-50 text-brand-700 hover:bg-brand-100 border border-brand-200 transition">
+                    📚 Study Points
+                </button>
+                <button hx-post="/dashboard/quiz" hx-target="#assignment-{i} .results-area"
+                        hx-vals='{{"assignment": "{_escape_json(title)}", "course": "{_escape_json(course)}", "due_date": "{_escape_json(due)}", "description": "{_escape_json(a.get('description', ''))}"}}'
+                        hx-indicator="#spinner-{i}"
+                        class="px-3 py-1.5 text-xs font-medium rounded-lg bg-green-50 text-green-700 hover:bg-green-100 border border-green-200 transition">
+                    📝 Generate Quiz
+                </button>
+                {"""<button hx-post="/dashboard/grab-instructions" hx-target="#assignment-{i} .results-area"
+                        hx-vals='{{"url": "{_escape_json(url)}", "title": "{_escape_json(title)}"}}'
+                        hx-indicator="#spinner-{i}"
+                        class="px-3 py-1.5 text-xs font-medium rounded-lg bg-purple-50 text-purple-700 hover:bg-purple-100 border border-purple-200 transition">
+                    📥 Grab Instructions
+                </button>""" if url else ""}
+                <div id="spinner-{i}" class="htmx-indicator">
+                    <div class="w-4 h-4 border-2 border-brand-200 border-t-brand-600 rounded-full animate-spin"></div>
+                </div>
+            </div>
+
+            <div class="results-area mt-3"></div>
+        </div>
+        '''
+
+    return f'''
+    <div class="space-y-4">
+        <div class="flex items-center justify-between">
+            <h2 class="text-lg font-bold text-gray-900">
+                📋 Found {len(assignments)} assignment{'s' if len(assignments) != 1 else ''}
+            </h2>
+        </div>
+        {cards_html}
+    </div>
+    '''
 
 
 # ── Print descriptions to server console ──────────────────────────────

@@ -54,10 +54,22 @@
     </div>
 
     <!-- Status -->
-    <div id="status-area" class="text-sm"></div>
+    <div id="status-area" class="text-sm">
+        {% if cached_time %}
+        <div class="flex items-center justify-between p-3 bg-green-50 text-green-700 rounded-lg text-sm">
+            <span>✅ Loaded from cache — last fetched {{ cached_time }}</span>
+            <button @click="startGrabCountdown()" :disabled="grabbing"
+                    class="px-3 py-1 text-xs font-medium rounded bg-green-200 hover:bg-green-300 transition disabled:opacity-50"
+                    x-text="grabbing ? 'Grabbing...' : '🔄 Refresh'">
+            </button>
+        </div>
+        {% endif %}
+    </div>
 
     <!-- Results -->
-    <div id="results" class="space-y-4"></div>
+    <div id="results" class="space-y-4">
+        {{ cached_html | safe }}
+    </div>
 
     <!-- Manual paste (collapsible fallback) -->
     <details class="bg-white rounded-xl border p-4 mt-6">
@@ -120,6 +132,10 @@ function dashboardInspector() {
                 const resp = await fetch('/dashboard/grab', { method: 'POST' });
                 const html = await resp.text();
                 document.getElementById('results').innerHTML = html;
+                // Force HTMX to process the newly inserted elements
+                if (typeof htmx !== 'undefined') {
+                    htmx.process(document.getElementById('results'));
+                }
                 document.getElementById('status-area').innerHTML =
                     '<div class="p-3 bg-green-50 text-green-700 rounded-lg text-sm">✅ Done! Assignments loaded below.</div>';
             } catch (err) {
@@ -150,6 +166,7 @@ function dashboardInspector() {
             try {
                 const resp = await fetch('/dashboard/inspect', { method: 'POST', body: formData });
                 document.getElementById('results').innerHTML = await resp.text();
+                if (typeof htmx !== 'undefined') htmx.process(document.getElementById('results'));
             } catch (err) {
                 document.getElementById('results').innerHTML =
                     `<div class="p-4 bg-red-50 text-red-700 rounded border border-red-200">Failed: ${err.message}</div>`;
@@ -165,6 +182,7 @@ function dashboardInspector() {
             try {
                 const resp = await fetch('/dashboard/scrape-only', { method: 'POST', body: formData });
                 document.getElementById('results').innerHTML = await resp.text();
+                if (typeof htmx !== 'undefined') htmx.process(document.getElementById('results'));
             } catch (err) {
                 document.getElementById('results').innerHTML =
                     `<div class="p-4 bg-red-50 text-red-700 rounded border border-red-200">Failed: ${err.message}</div>`;
