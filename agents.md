@@ -8,6 +8,90 @@ Built for **MLH 2026**.
 
 ---
 
+## 🧭 AI Context — Implementation Status (2026-09-26)
+
+> This section is written for AI coding agents to get up to speed fast.
+> Update this section as the project evolves.
+
+### Active Branch: `feature/assignmenthelp`
+
+Current active work is on the **Dashboard Inspector** (Tool #3).
+The other two tools (Study Buddy, Lecture Note-Taker) are frontend shells with stub backends.
+
+### Implementation Status
+
+| Tool | Status | What's Done | What's Missing |
+|---|---|---|---|
+| 📋 Dashboard Inspector | **✅ Mostly complete** | Scraper (6 fallback parsers), Gemini study points + quiz generation, browser automation (PyAutoGUI), instruction extraction from assignment pages, polished HTMX frontend with countdown/overlay/manual paste | No bookmarklet yet, no Moodle detail-page auto-fetching (user must copy/paste or use grab), no persistent history |
+| 📄 Study Buddy | 🟡 **Stub** | Frontend shell (drag-drop, loading spinner, quiz container), router stubs, Alpine.js state | `services/pdf_parser.py` is a stub, `routers/study_buddy.py` returns placeholder HTML, no Gemini quiz generation, no conversational explainer |
+| 🎙️ Lecture Note-Taker | 🟡 **Stub** | Frontend shell (recording button, timer, notes/flags panels), WebSocket endpoint stub | `services/audio_processor.py` is a stub, no real-time audio streaming, no Gemini multimodal integration, `routers/lecture.py` just echoes bytes back |
+
+### Moodle Scraper Architecture
+
+`services/moodle_scraper.py` tries **6 parsing strategies** in priority order:
+
+1. **Timeline block** (`[data-region="event-list-item"]`) — Moodle 4.x standard, covers NCSU WolfWare
+2. **Course overview cards** (`.card.dashboard-card`) — older Moodle themes
+3. **Generic tables** (`<table>` with `href*='assign'`) — catch-all
+4. **List items** (`<li>` with `<a href*='assign'>`) — catch-all
+5. **HTML text patterns** (elements containing "is due" / "closes") — robust fallback
+6. **Plain text** (no HTML tags, e.g. Ctrl+A/Ctrl+V paste) — last resort
+
+Each parser extracts: `title`, `course`, `due_date`, `url`, `overdue` (bool), `description`.
+
+### Browser Automation (PyAutoGUI)
+
+`services/moodle_browser.py` opens a new browser tab, pastes a URL, waits N seconds, then Ctrl+A → Ctrl+C to copy page content, reads clipboard, closes tab. Used for:
+- `/dashboard/grab` — grab the entire Moodle dashboard
+- `/dashboard/grab-instructions` — grab an individual assignment's instructions + Google Doc links
+
+**Known sensitivity:** Other windows stealing focus during automation will break the sequence. The 5-second load wait is generous but Moodle can be slow.
+
+### Gemini Integration
+
+`services/gemini.py` is shared across all three tools:
+- Lazy-loads the `google-genai` client (graceful stub when no API key present)
+- `ask_gemini(prompt, context, system_prompt)` — freeform response
+- `ask_gemini_structured(prompt, context, system_prompt)` — adds markdown-structure instruction
+- Default model: `gemini-2.0-flash`
+
+### HTMX Pattern (Dashboard Tool)
+
+All Dashboard Inspector interactions follow the same HTMX pattern:
+
+```
+User clicks "Study Points" → POST /dashboard/study-points → Gemini → HTML <div> with bullet list → hx-target swap
+User clicks "Generate Quiz" → POST /dashboard/quiz → Gemini → HTML <div> with Q&A → hx-target swap
+User clicks "Grab Instructions" → POST /dashboard/grab-instructions → PyAutoGUI → HTML <div> with links + text → hx-target swap
+```
+
+Each assignment card has a `.results-area` div that receives the swap, keeping cards independent.
+
+### Jinja2 Rendering
+
+Templates use a direct Jinja2 `Environment` (not Starlette's `Jinja2Templates`) for Python 3.14 compatibility with `datetime.strptime` changes. Each router that needs templates creates its own `_jinja_env` pointing to `templates/`.
+
+### Dashboard Endpoints (all currently working)
+
+```
+GET  /dashboard                          → Dashboard page (HTML)
+POST /dashboard/inspect                  → Paste dashboard HTML → assignment cards
+POST /dashboard/grab                     → PyAutoGUI grab → assignment cards
+POST /dashboard/scrape-only              → Paste HTML → parse only (no Gemini, debugging)
+POST /dashboard/study-points             → Gemini → study topics for one assignment
+POST /dashboard/quiz                     → Gemini → practice quiz for one assignment
+POST /dashboard/grab-instructions        → PyAutoGUI → assignment instructions + links
+GET  /dashboard/debug/sample             → Parse sample HTML → show results
+GET  /dashboard/debug/sample-raw         → Return raw sample HTML (for frontend testing)
+```
+
+### Stubs to Fill (when switching branches)
+
+1. **Study Buddy:** Implement `services/pdf_parser.py` with PyMuPDF, then wire `routers/study_buddy.py` POST handlers to call `ask_gemini` for quiz generation and answer explanation. The frontend is fully ready.
+2. **Lecture Note-Taker:** Implement `services/audio_processor.py` for audio chunking, connect WebSocket in `routers/lecture.py` to Gemini's streaming multimodal API, push real-time notes back as JSON. The frontend has the WebSocket connection pattern and Alpine.js state ready.
+
+---
+
 ## Stack
 
 ### Backend — FastAPI (Python)

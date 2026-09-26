@@ -12,9 +12,9 @@ from fastapi import APIRouter, Request, Form
 from fastapi.responses import HTMLResponse
 from pathlib import Path
 
-from services.moodle_scraper import parse_dashboard, extract_assignment_detail
+from services.moodle_scraper import parse_dashboard, extract_assignment_detail, enrich_assignments_with_descriptions
 from services.gemini import ask_gemini, ask_gemini_structured
-from services.moodle_browser import grab_moodle_page
+from services.moodle_browser import open_dashboard_and_grab, grab_moodle_page, grab_assignment_descriptions
 
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
 
@@ -95,7 +95,7 @@ async def grab_moodle():
     Open a new tab, navigate to Moodle, wait for load, then grab the HTML
     via pyautogui keyboard shortcuts.
     """
-    from services.moodle_browser import grab_moodle_page as _grab
+    from services.moodle_browser import open_dashboard_and_grab as _grab
     try:
         html = _grab(url="https://moodle-courses2527.wolfware.ncsu.edu/my/")
 
@@ -111,6 +111,17 @@ async def grab_moodle():
 
         # Parse the grabbed HTML
         assignments = parse_dashboard(html)
+
+        # 🔍 Enrich each assignment: visit the individual assignment page
+        #    via PyAutoGUI and grab the full description text for AI context.
+        #    This data is hidden from the user but sent to Gemini.
+        if assignments:
+            try:
+                assignments = grab_assignment_descriptions(assignments, load_wait=2)
+                assignments = enrich_assignments_with_descriptions(assignments)
+                _print_descriptions(assignments)
+            except Exception as e:
+                print(f"  ⚠️  Assignment description enrichment failed: {e}")
 
         if not assignments:
             return '''
@@ -159,12 +170,12 @@ async def grab_moodle():
 
                 <div class="mt-3 flex gap-2 flex-wrap">
                     <button hx-post="/dashboard/study-points" hx-target="#assignment-{i} .results-area"
-                            hx-vals='{{ "assignment": "{title}", "course": "{course}", "due_date": "{_fmt_date(a.get('due_date', ''))}" }}'
+                            hx-vals='{{ "assignment": "{_escape_json(title)}", "course": "{_escape_json(course)}", "due_date": "{_escape_json(_fmt_date(a.get('due_date', '')))}", "description": "{_escape_json(a.get('description', ''))}" }}'
                             class="px-3 py-1.5 text-xs font-medium rounded-lg bg-brand-50 text-brand-700 hover:bg-brand-100 border border-brand-200 transition">
                         📚 Study Points
                     </button>
                     <button hx-post="/dashboard/quiz" hx-target="#assignment-{i} .results-area"
-                            hx-vals='{{ "assignment": "{title}", "course": "{course}", "due_date": "{_fmt_date(a.get('due_date', ''))}" }}'
+                            hx-vals='{{ "assignment": "{_escape_json(title)}", "course": "{_escape_json(course)}", "due_date": "{_escape_json(_fmt_date(a.get('due_date', '')))}", "description": "{_escape_json(a.get('description', ''))}" }}'
                             class="px-3 py-1.5 text-xs font-medium rounded-lg bg-green-50 text-green-700 hover:bg-green-100 border border-green-200 transition">
                         📝 Generate Quiz
                     </button>
@@ -184,6 +195,7 @@ async def grab_moodle():
             </div>
             {cards_html}
         </div>
+        {_CONSOLE_DUMP}
         '''
 
     except Exception as e:
@@ -744,3 +756,74 @@ def _escape_html(text: str) -> str:
     """Escape a string for safe embedding in HTML."""
     import html as html_mod
     return html_mod.escape(text)
+
+
+# ── Print descriptions to server console ──────────────────────────────
+
+_CONSOLE_DUMP: str = ""  # <script> block injected into grab response
+
+
+def _print_descriptions(assignments: list[dict]) -> None:
+    """
+    Print every collected description to the server terminal so the user
+    can verify the text in the CMD window where uvicorn is running.
+    """
+    print()
+    print("=" * 72)
+    print("  ASSIGNMENT DESCRIPTION REPORT")
+    print("=" * 72)
+
+    total_chars = 0
+    grabbed_count = 0
+
+    for i, a in enumerate(assignments):
+        title = a.get("title", "?")
+        course = a.get("course", "?")
+        desc = a.get("description", "") or ""
+        char_count = len(desc)
+        total_chars += char_count
+
+        print()
+        print(f"  [{i+1}] {title}")
+        print(f"      Course: {course}  |  {char_count} chars")
+        print(f"      {'─' * 60}")
+
+        if char_count > 50:
+            grabbed_count += 1
+            # Print the FULL text, indented
+            for line in desc.split("\n"):
+                print(f"      {line}")
+        else:
+            print(f"      (no description collected)")
+
+        print(f"      {'─' * 60}")
+
+    print()
+    print(f"  Summary: {grabbed_count}/{len(assignments)} assignments have descriptions")
+    print(f"  Total:   {total_chars} chars collected for AI context")
+    print("=" * 72)
+    print()
+
+    # Also build a small inline script tag showing summary in Chrome console
+    global _CONSOLE_DUMP
+    import json as _json
+    records = [
+        {"title": a.get("title", "?"), "course": a.get("course", "?"), "char_count": len(a.get("description", "") or "")}
+        for a in assignments
+    ]
+    json_data = _json.dumps(records, indent=2, ensure_ascii=False)
+
+    _CONSOLE_DUMP = f'''
+<script>
+console.log("=" .repeat(72));
+console.log("  ASSIGNMENT DESCRIPTION REPORT  (" + new Date().toLocaleTimeString() + ")");
+console.log("=" .repeat(72));
+const _d = {json_data};
+for (let i = 0; i < _d.length; i++) {{
+    console.log(`  [${{i+1}}] ${{_d[i].title}}  --  ${{_d[i].course}}  (${{_d[i].char_count}} chars)`);
+}}
+console.log("=" .repeat(72));
+console.log("  (Full text printed in the server terminal)");
+console.log("=" .repeat(72));
+</script>
+'''

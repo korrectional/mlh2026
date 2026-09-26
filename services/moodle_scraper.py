@@ -415,13 +415,40 @@ def extract_assignment_detail(html: str) -> dict:
     """
     Parse an individual assignment page to extract description and metadata.
 
-    Called when we fetch each assignment's detail page (future enhancement).
+    Returns cleaner text than the dashboard-level parse — this is the
+    full assignment description for AI consumption.
     """
     soup = BeautifulSoup(html, "html.parser")
+    raw_len = len(html)
 
-    # Moodle assignment description is usually in .no-overflow or #intro
-    desc_el = soup.select_one(".no-overflow, #intro, [data-region='assignment-info']")
-    description = desc_el.get_text(strip=True) if desc_el else ""
+    # Strip nav, header, footer, script, style noise for a clean read
+    for tag in soup.select("script, style, nav, header, footer, .navbar, .footer, .breadcrumb, .block_navigation, #page-footer, .drawer, .block"):
+        tag.decompose()
+
+    # Priority: assignment description area — widen the net
+    description = ""
+    desc_el = soup.select_one(
+        ".no-overflow, "
+        "#intro, "
+        "[data-region='assignment-info'], "
+        ".activity-description, "
+        ".generalbox, "
+        ".box.py-3, "
+        "div[data-activityname] div.description, "
+        ".assignmentcontent, "
+        "#page-content, "
+        "[role='main']"
+    )
+    if desc_el:
+        description = desc_el.get_text("\n", strip=True)
+
+    # Fallback: grab ALL visible body text (strip nav already done above)
+    if not description or len(description) < 50:
+        body = soup.find("body")
+        if body:
+            description = body.get_text("\n", strip=True)
+
+    description = description.strip()[:20000]
 
     # Due date from the assignment info section
     date_el = soup.select_one(
@@ -430,7 +457,40 @@ def extract_assignment_detail(html: str) -> dict:
     )
     due_date = date_el.get_text(strip=True) if date_el else ""
 
+    print(f"      extracted {len(description)} chars from {raw_len} raw HTML")
     return {
         "description": description,
         "due_date": due_date,
     }
+
+
+def enrich_assignments_with_descriptions(assignments: list[dict]) -> list[dict]:
+    """
+    Take a list of assignment dicts (from parse_dashboard), extract the
+    `_page_html` raw page content from each, and run extract_assignment_detail
+    to produce clean AI-grade description text.
+
+    The description is stored under the existing `description` key, overwriting
+    the dashboard-level placeholder (e.g. "Assignment is due").
+    The raw `_page_html` is removed afterward (not for the user).
+
+    Assignments that have no `_page_html` are left unchanged.
+    """
+    for a in assignments:
+        page_html = a.pop("_page_html", "")
+        if not page_html:
+            print(f"      ⚠️  No _page_html for '{a.get('title', '?')}' — grab may have failed")
+            continue
+        try:
+            detail = extract_assignment_detail(page_html)
+            desc = detail.get("description", "")
+            if desc and len(desc) > 10:  # Very low bar — just need more than nothing
+                old_len = len(a.get("description", "") or "")
+                a["description"] = desc
+                print(f"      ✅ Replaced placeholder ({old_len} chars) with extracted text ({len(desc)} chars)")
+            else:
+                print(f"      ⚠️  Extracted only {len(desc)} chars — keeping original")
+        except Exception as e:
+            print(f"      ❌ Extraction error: {e}")
+
+    return assignments
