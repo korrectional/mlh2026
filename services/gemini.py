@@ -28,7 +28,7 @@ def _get_client():
         return None
 
 
-DEFAULT_MODEL = "gemini-3.8-flash"
+DEFAULT_MODEL = "gemini-flash-lite-latest"
 
 
 async def ask_gemini(
