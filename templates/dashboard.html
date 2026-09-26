@@ -9,37 +9,60 @@
     <div>
         <h1 class="text-2xl font-bold">📋 Dashboard Inspector</h1>
         <p class="text-sm text-gray-500">
-            Open your NCSU Moodle dashboard, then fetch your assignments.
+            Finds assignments due soon from your NCSU Moodle dashboard — without copying a single line of HTML.
         </p>
     </div>
 
-    <!-- Big action buttons -->
+    <!-- Step flow -->
     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
 
-        <!-- Open Moodle -->
-        <a href="https://moodle-courses2527.wolfware.ncsu.edu/my/"
-           target="_blank"
-           class="flex flex-col items-center justify-center p-8 bg-white rounded-xl border-2 border-brand-200 hover:border-brand-500 hover:shadow-lg transition group">
-            <span class="text-5xl mb-3">🌐</span>
-            <span class="text-lg font-semibold text-gray-900 group-hover:text-brand-600">Open Moodle Dashboard</span>
-            <span class="text-sm text-gray-500 mt-1">Log into WolfWare in your browser</span>
-        </a>
+        <!-- Step 1: Open Moodle -->
+        <div class="bg-white rounded-xl border-2 p-6 text-center transition"
+             :class="moodleOpened ? 'border-green-400 bg-green-50/50' : 'border-brand-200 hover:border-brand-400'">
+            <div class="text-5xl mb-3">🌐</div>
+            <h2 class="text-lg font-semibold text-gray-900 mb-1">Step 1: Open Moodle</h2>
+            <p class="text-sm text-gray-500 mb-4">Opens your NCSU WolfWare dashboard in a new tab</p>
+            <button @click="openMoodle()" :disabled="moodleOpened"
+                    class="px-6 py-2.5 rounded-lg text-sm font-medium transition disabled:opacity-50"
+                    :class="moodleOpened ? 'bg-green-100 text-green-700' : 'bg-brand-600 text-white hover:bg-brand-700'">
+                <span x-text="moodleOpened ? '✅ Opened!' : '🌐 Open Moodle'"></span>
+            </button>
+        </div>
 
-        <!-- Then scrape (disabled until user has opened moodle, or always available) -->
-        <div class="flex flex-col items-center justify-center p-8 bg-white rounded-xl border-2 border-gray-200 hover:border-green-400 hover:shadow-lg transition group cursor-pointer"
-             @click="fetchFromMoodle()">
-            <span class="text-5xl mb-3">📥</span>
-            <span class="text-lg font-semibold text-gray-900 group-hover:text-green-600">Fetch Assignments</span>
-            <span class="text-sm text-gray-500 mt-1">Pull your due-soon assignments</span>
+        <!-- Step 2: Grab it -->
+        <div class="bg-white rounded-xl border-2 p-6 text-center transition"
+             :class="showGrab ? 'border-yellow-400 bg-yellow-50/50' : 'border-gray-200'">
+            <div class="text-5xl mb-3">📥</div>
+            <h2 class="text-lg font-semibold text-gray-900 mb-1">Step 2: Grab the page</h2>
+            <p class="text-sm text-gray-500 mb-4">Log into Moodle, switch back here, and hit grab</p>
+            <button @click="startGrabCountdown()" :disabled="!moodleOpened || grabbing"
+                    class="px-6 py-2.5 rounded-lg text-sm font-medium transition disabled:opacity-50"
+                    :class="grabbing ? 'bg-gray-100 text-gray-500' : 'bg-gray-800 text-white hover:bg-gray-900'">
+                <span x-text="grabbing ? countdownText : '📥 Grab it!'"></span>
+            </button>
         </div>
 
     </div>
 
-    <!-- Status -->
-    <div x-show="statusText" class="text-sm text-gray-600 bg-gray-50 rounded-lg border px-4 py-2.5" x-text="statusText"></div>
+    <!-- Countdown overlay -->
+    <div x-show="showCountdown" 
+         class="fixed inset-0 bg-black/60 z-50 flex items-center justify-center"
+         x-transition>
+        <div class="bg-white rounded-2xl p-10 text-center max-w-sm mx-4 shadow-2xl">
+            <div class="text-7xl font-bold text-brand-600 mb-4" x-text="countdownNum"></div>
+            <p class="text-lg font-medium text-gray-900">Switch to your Moodle tab now!</p>
+            <p class="text-sm text-gray-500 mt-2">I'll grab the page automatically...</p>
+        </div>
+    </div>
+
+    <!-- Status messages (swapped via HTMX) -->
+    <div id="status-area" class="text-sm"></div>
+
+    <!-- Results -->
+    <div id="results" class="space-y-4"></div>
 
     <!-- Manual paste (collapsible fallback) -->
-    <details class="bg-white rounded-xl border p-4">
+    <details class="bg-white rounded-xl border p-4 mt-6">
         <summary class="text-sm font-medium text-gray-500 cursor-pointer hover:text-gray-700">
             ⚙️ Advanced: paste HTML manually
         </summary>
@@ -65,31 +88,56 @@
         </div>
     </details>
 
-    <!-- Results -->
-    <div id="results" class="space-y-4"></div>
-
 </div>
 
 <script>
 function dashboardInspector() {
     return {
+        moodleOpened: false,
+        showGrab: false,
+        grabbing: false,
+        showCountdown: false,
+        countdownNum: 3,
+        countdownText: '',
         inspecting: false,
-        hasResults: false,
-        statusText: '',
 
-        async fetchFromMoodle() {
-            this.statusText = '⏳ Opening Moodle... first log in, then come back and I\'ll guide you through the next step.';
+        async openMoodle() {
+            this.moodleOpened = true;
+            this.showGrab = true;
+            const resp = await fetch('/dashboard/fetch', { method: 'POST' });
+            document.getElementById('status-area').innerHTML = await resp.text();
+        },
 
-            // Open Moodle in a new tab
-            window.open('https://moodle-courses2527.wolfware.ncsu.edu/my/', '_blank');
+        startGrabCountdown() {
+            this.grabbing = true;
+            this.showCountdown = true;
+            this.countdownNum = 3;
+            this.countdownText = '3';
 
-            this.statusText = '🌐 Moodle opened in a new tab. Log in, then copy the page HTML and paste it below.';
+            const interval = setInterval(() => {
+                this.countdownNum--;
+                this.countdownText = String(this.countdownNum);
+                if (this.countdownNum <= 0) {
+                    clearInterval(interval);
+                    this.showCountdown = false;
+                    this.doGrab();
+                }
+            }, 1000);
+        },
 
-            // Auto-scroll to the paste area and expand it
-            const details = document.querySelector('details');
-            if (details) details.open = true;
-            const textarea = document.getElementById('dashboard-html');
-            if (textarea) textarea.focus();
+        async doGrab() {
+            try {
+                const resp = await fetch('/dashboard/grab', { method: 'POST' });
+                const html = await resp.text();
+                document.getElementById('results').innerHTML = html;
+                document.getElementById('status-area').innerHTML =
+                    '<div class="p-3 bg-green-50 text-green-700 rounded-lg text-sm">✅ Page grabbed and parsed!</div>';
+            } catch (err) {
+                document.getElementById('results').innerHTML =
+                    `<div class="p-4 bg-red-50 text-red-700 rounded border border-red-200">Grab failed: ${err.message}</div>`;
+            } finally {
+                this.grabbing = false;
+            }
         },
 
         async loadSample() {
@@ -99,71 +147,38 @@ function dashboardInspector() {
                 document.getElementById('dashboard-html').value = sampleHtml;
                 await this.scrapeOnly();
             } catch (err) {
-                console.error('Failed to load sample:', err);
                 alert('Could not load sample HTML.');
             }
         },
 
         async inspect() {
             const html = document.getElementById('dashboard-html').value;
-            if (!html.trim()) {
-                alert('Paste your Moodle dashboard HTML first.');
-                return;
-            }
-
+            if (!html.trim()) { alert('Paste your Moodle dashboard HTML first.'); return; }
             this.inspecting = true;
-
             const formData = new FormData();
             formData.append('dashboard_html', html);
-
             try {
-                const resp = await fetch('/dashboard/inspect', {
-                    method: 'POST',
-                    body: formData
-                });
-                const htmlResult = await resp.text();
-                document.getElementById('results').innerHTML = htmlResult;
-                this.hasResults = true;
-                this.statusText = '✅ Assignments loaded!';
+                const resp = await fetch('/dashboard/inspect', { method: 'POST', body: formData });
+                document.getElementById('results').innerHTML = await resp.text();
             } catch (err) {
                 document.getElementById('results').innerHTML =
-                    `<div class="p-4 bg-red-50 text-red-700 rounded border border-red-200">Inspection failed: ${err.message}</div>`;
-                this.hasResults = true;
-                this.statusText = '❌ Failed to inspect';
-            } finally {
-                this.inspecting = false;
-            }
+                    `<div class="p-4 bg-red-50 text-red-700 rounded border border-red-200">Failed: ${err.message}</div>`;
+            } finally { this.inspecting = false; }
         },
 
         async scrapeOnly() {
             const html = document.getElementById('dashboard-html').value;
-            if (!html.trim()) {
-                alert('Paste your Moodle dashboard HTML first.');
-                return;
-            }
-
+            if (!html.trim()) { alert('Paste your Moodle dashboard HTML first.'); return; }
             this.inspecting = true;
-
             const formData = new FormData();
             formData.append('dashboard_html', html);
-
             try {
-                const resp = await fetch('/dashboard/scrape-only', {
-                    method: 'POST',
-                    body: formData
-                });
-                const htmlResult = await resp.text();
-                document.getElementById('results').innerHTML = htmlResult;
-                this.hasResults = true;
-                this.statusText = '✅ Assignments parsed!';
+                const resp = await fetch('/dashboard/scrape-only', { method: 'POST', body: formData });
+                document.getElementById('results').innerHTML = await resp.text();
             } catch (err) {
                 document.getElementById('results').innerHTML =
-                    `<div class="p-4 bg-red-50 text-red-700 rounded border border-red-200">Scrape failed: ${err.message}</div>`;
-                this.hasResults = true;
-                this.statusText = '❌ Scrape failed';
-            } finally {
-                this.inspecting = false;
-            }
+                    `<div class="p-4 bg-red-50 text-red-700 rounded border border-red-200">Failed: ${err.message}</div>`;
+            } finally { this.inspecting = false; }
         }
     };
 }
