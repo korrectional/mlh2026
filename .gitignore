@@ -61,3 +61,5 @@ Thumbs.db
 *.mp4
 screenshots/
 lecture_history/
+nul
+dashboard_cache.json

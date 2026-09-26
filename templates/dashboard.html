@@ -9,57 +9,67 @@
     <div>
         <h1 class="text-2xl font-bold">📋 Dashboard Inspector</h1>
         <p class="text-sm text-gray-500">
-            Finds assignments due soon from your NCSU Moodle dashboard — without copying a single line of HTML.
+            Scans your NCSU Moodle for due-soon assignments — no copying or pasting needed.
         </p>
     </div>
 
-    <!-- Step flow -->
-    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+    <!-- Step 1: Confirm logged in -->
+    <div x-show="!confirmed" class="bg-white rounded-xl border-2 border-brand-200 p-6 text-center">
+        <div class="text-5xl mb-3">🔐</div>
+        <h2 class="text-lg font-semibold text-gray-900 mb-2">Make sure you're logged into Moodle</h2>
+        <p class="text-sm text-gray-500 mb-4">
+            Open <strong>WolfWare</strong> in your browser and log in if you haven't already.
+        </p>
+        <button @click="confirmed = true"
+                class="px-8 py-2.5 bg-brand-600 text-white rounded-lg text-sm font-medium hover:bg-brand-700 transition">
+            ✅ Yes, I'm logged in
+        </button>
+    </div>
 
-        <!-- Step 1: Open Moodle -->
-        <div class="bg-white rounded-xl border-2 p-6 text-center transition"
-             :class="moodleOpened ? 'border-green-400 bg-green-50/50' : 'border-brand-200 hover:border-brand-400'">
-            <div class="text-5xl mb-3">🌐</div>
-            <h2 class="text-lg font-semibold text-gray-900 mb-1">Step 1: Open Moodle</h2>
-            <p class="text-sm text-gray-500 mb-4">Opens your NCSU WolfWare dashboard in a new tab</p>
-            <button @click="openMoodle()" :disabled="moodleOpened"
-                    class="px-6 py-2.5 rounded-lg text-sm font-medium transition disabled:opacity-50"
-                    :class="moodleOpened ? 'bg-green-100 text-green-700' : 'bg-brand-600 text-white hover:bg-brand-700'">
-                <span x-text="moodleOpened ? '✅ Opened!' : '🌐 Open Moodle'"></span>
-            </button>
-        </div>
-
-        <!-- Step 2: Grab it -->
-        <div class="bg-white rounded-xl border-2 p-6 text-center transition"
-             :class="showGrab ? 'border-yellow-400 bg-yellow-50/50' : 'border-gray-200'">
-            <div class="text-5xl mb-3">📥</div>
-            <h2 class="text-lg font-semibold text-gray-900 mb-1">Step 2: Grab the page</h2>
-            <p class="text-sm text-gray-500 mb-4">Log into Moodle, switch back here, and hit grab</p>
-            <button @click="startGrabCountdown()" :disabled="!moodleOpened || grabbing"
-                    class="px-6 py-2.5 rounded-lg text-sm font-medium transition disabled:opacity-50"
-                    :class="grabbing ? 'bg-gray-100 text-gray-500' : 'bg-gray-800 text-white hover:bg-gray-900'">
-                <span x-text="grabbing ? countdownText : '📥 Grab it!'"></span>
-            </button>
-        </div>
-
+    <!-- Step 2: Grab -->
+    <div x-show="confirmed" class="bg-white rounded-xl border-2 p-6 text-center transition"
+         :class="grabbing ? 'border-yellow-400 bg-yellow-50/50' : 'border-gray-200 hover:border-brand-300'">
+        <div class="text-5xl mb-3">📥</div>
+        <h2 class="text-lg font-semibold text-gray-900 mb-2">Grab your assignments</h2>
+        <p class="text-sm text-gray-500 mb-4">
+            I'll open a new tab, go to your Moodle dashboard, and grab the assignments.
+            Make sure your browser window is <strong>focused and visible</strong> during the countdown.
+        </p>
+        <button @click="startGrabCountdown()" :disabled="grabbing"
+                class="px-8 py-2.5 rounded-lg text-sm font-medium transition disabled:opacity-50"
+                :class="grabbing ? 'bg-gray-100 text-gray-500' : 'bg-gray-800 text-white hover:bg-gray-900'">
+            <span x-text="grabbing ? countdownText : '📥 Grab Assignments'"></span>
+        </button>
     </div>
 
     <!-- Countdown overlay -->
-    <div x-show="showCountdown" 
+    <div x-show="showCountdown"
          class="fixed inset-0 bg-black/60 z-50 flex items-center justify-center"
          x-transition>
         <div class="bg-white rounded-2xl p-10 text-center max-w-sm mx-4 shadow-2xl">
             <div class="text-7xl font-bold text-brand-600 mb-4" x-text="countdownNum"></div>
-            <p class="text-lg font-medium text-gray-900">Switch to your Moodle tab now!</p>
-            <p class="text-sm text-gray-500 mt-2">I'll grab the page automatically...</p>
+            <p class="text-lg font-medium text-gray-900">Keep your browser focused!</p>
+            <p class="text-sm text-gray-500 mt-2">Opening Moodle and grabbing the page...</p>
         </div>
     </div>
 
-    <!-- Status messages (swapped via HTMX) -->
-    <div id="status-area" class="text-sm"></div>
+    <!-- Status -->
+    <div id="status-area" class="text-sm">
+        {% if cached_time %}
+        <div class="flex items-center justify-between p-3 bg-green-50 text-green-700 rounded-lg text-sm">
+            <span>✅ Loaded from cache — last fetched {{ cached_time }}</span>
+            <button @click="startGrabCountdown()" :disabled="grabbing"
+                    class="px-3 py-1 text-xs font-medium rounded bg-green-200 hover:bg-green-300 transition disabled:opacity-50"
+                    x-text="grabbing ? 'Grabbing...' : '🔄 Refresh'">
+            </button>
+        </div>
+        {% endif %}
+    </div>
 
     <!-- Results -->
-    <div id="results" class="space-y-4"></div>
+    <div id="results" class="space-y-4">
+        {{ cached_html | safe }}
+    </div>
 
     <!-- Manual paste (collapsible fallback) -->
     <details class="bg-white rounded-xl border p-4 mt-6">
@@ -93,20 +103,12 @@
 <script>
 function dashboardInspector() {
     return {
-        moodleOpened: false,
-        showGrab: false,
+        confirmed: false,
         grabbing: false,
         showCountdown: false,
         countdownNum: 3,
         countdownText: '',
         inspecting: false,
-
-        async openMoodle() {
-            this.moodleOpened = true;
-            this.showGrab = true;
-            const resp = await fetch('/dashboard/fetch', { method: 'POST' });
-            document.getElementById('status-area').innerHTML = await resp.text();
-        },
 
         startGrabCountdown() {
             this.grabbing = true;
@@ -130,8 +132,11 @@ function dashboardInspector() {
                 const resp = await fetch('/dashboard/grab', { method: 'POST' });
                 const html = await resp.text();
                 document.getElementById('results').innerHTML = html;
+                if (typeof htmx !== 'undefined') {
+                    htmx.process(document.getElementById('results'));
+                }
                 document.getElementById('status-area').innerHTML =
-                    '<div class="p-3 bg-green-50 text-green-700 rounded-lg text-sm">✅ Page grabbed and parsed!</div>';
+                    '<div class="p-3 bg-green-50 text-green-700 rounded-lg text-sm">✅ Done! Assignments loaded below.</div>';
             } catch (err) {
                 document.getElementById('results').innerHTML =
                     `<div class="p-4 bg-red-50 text-red-700 rounded border border-red-200">Grab failed: ${err.message}</div>`;
@@ -160,6 +165,7 @@ function dashboardInspector() {
             try {
                 const resp = await fetch('/dashboard/inspect', { method: 'POST', body: formData });
                 document.getElementById('results').innerHTML = await resp.text();
+                if (typeof htmx !== 'undefined') htmx.process(document.getElementById('results'));
             } catch (err) {
                 document.getElementById('results').innerHTML =
                     `<div class="p-4 bg-red-50 text-red-700 rounded border border-red-200">Failed: ${err.message}</div>`;
@@ -175,6 +181,7 @@ function dashboardInspector() {
             try {
                 const resp = await fetch('/dashboard/scrape-only', { method: 'POST', body: formData });
                 document.getElementById('results').innerHTML = await resp.text();
+                if (typeof htmx !== 'undefined') htmx.process(document.getElementById('results'));
             } catch (err) {
                 document.getElementById('results').innerHTML =
                     `<div class="p-4 bg-red-50 text-red-700 rounded border border-red-200">Failed: ${err.message}</div>`;

@@ -226,6 +226,135 @@ def _parse_list_items(soup: BeautifulSoup) -> list[MoodleAssignment]:
     return assignments
 
 
+def _parse_text_patterns(soup: BeautifulSoup) -> list[MoodleAssignment]:
+    """
+    HTML text-node fallback: find elements containing "is due · Course".
+    """
+    assignments = []
+
+    for el in soup.find_all(string=lambda t: t and ("is due" in t.lower() or "closes" in t.lower())):
+        parent = el.parent
+        if not parent:
+            continue
+
+        text = parent.get_text(" ", strip=True)
+
+        course = ""
+        match = re.search(r"[·•]\s*(.+)$", text)
+        if match:
+            course = match.group(1).strip()
+
+        activity_type = text.split("·")[0].strip() if "·" in text else text
+
+        title = ""
+        prev = parent.find_previous_sibling()
+        if prev:
+            title = prev.get_text(strip=True)
+
+        if not title or len(title) > 200:
+            prev_el = parent.find_previous()
+            if prev_el and prev_el != parent:
+                title = prev_el.get_text(strip=True)
+
+        url = ""
+        link = parent.find_previous("a", href=re.compile(r"mod/(assign|quiz)"))
+        if link:
+            url = _resolve_url(link.get("href", ""))
+            link_text = link.get_text(strip=True)
+            if link_text and len(link_text) > 2:
+                title = link_text
+
+        skip_patterns = [
+            r"^\d{1,2}:\d{2}", r"^Activity event$", r"^\d{1,2} event",
+            r"^No events", r"^Search by", r"^Skip", r"^$",
+        ]
+        if title and not any(re.match(p, title) for p in skip_patterns) and len(title) > 5:
+            assignments.append(MoodleAssignment(
+                title=title, course=course, url=url, description=activity_type,
+            ))
+
+    seen = set()
+    unique = []
+    for a in assignments:
+        key = a.title.lower().strip()
+        if key not in seen:
+            seen.add(key)
+            unique.append(a)
+
+    return unique
+
+
+def _parse_plain_text(text: str) -> list[MoodleAssignment]:
+    """
+    Plain-text fallback: parse rendered text (no HTML tags) from Ctrl+A/Ctrl+V.
+    """
+    lines = text.split("\n")
+    assignments = []
+
+    date_headers = {}
+    current_date = ""
+    for i, line in enumerate(lines):
+        stripped = line.strip()
+        if re.match(r"^(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday),\s+", stripped):
+            current_date = stripped
+        date_headers[i] = current_date
+
+    for i, line in enumerate(lines):
+        stripped = line.strip()
+
+        match = re.search(r"(?:is due|closes)\s*[·•]\s*(.+)$", stripped, re.IGNORECASE)
+        if not match:
+            continue
+
+        course = match.group(1).strip()
+        due_date = date_headers.get(i, "")
+        due_time = ""
+        title = ""
+
+        for j in range(i - 1, -1, -1):
+            prev = lines[j].strip()
+            if not prev:
+                continue
+            if re.match(r"^(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)", prev):
+                continue
+            if re.match(r"^Activity event$", prev, re.IGNORECASE):
+                continue
+            if re.match(r"^\d{1,2} event", prev, re.IGNORECASE):
+                continue
+            if "Search by" in prev or "Skip" in prev:
+                continue
+            if re.match(r"^\d{1,2}:\d{2}$", prev):
+                if not due_time:
+                    due_time = prev
+                continue
+            if not title:
+                title = prev
+                continue
+            break
+
+        full_due = due_date
+        if due_time:
+            full_due = f"{due_date} {due_time}" if due_date else due_time
+
+        if title and len(title) > 5:
+            assignments.append(MoodleAssignment(
+                title=title,
+                course=course,
+                due_date=full_due,
+                description=stripped.split("·")[0].strip() if "·" in stripped else "",
+            ))
+
+    seen = set()
+    unique = []
+    for a in assignments:
+        key = a.title.lower().strip()
+        if key not in seen:
+            seen.add(key)
+            unique.append(a)
+
+    return unique
+
+
 # ── Public API ─────────────────────────────────────────────────────────
 
 def parse_dashboard(html: str) -> list[dict]:
@@ -237,7 +366,16 @@ def parse_dashboard(html: str) -> list[dict]:
       2. Course overview cards
       3. Generic tables with assignment links
       4. List items with assignment links
+      5. Text patterns in HTML
+      6. Plain text (no HTML tags — from Ctrl+A/Ctrl+V)
     """
+    # Detect if this is plain rendered text (not HTML)
+    is_plain_text = "<" not in html[:500] if html else True
+
+    if is_plain_text:
+        assignments = _parse_plain_text(html)
+        return [a.to_dict() for a in assignments] if assignments else []
+
     soup = BeautifulSoup(html, "html.parser")
 
     # Priority 1: Timeline block (Moodle 4.x standard)
@@ -260,6 +398,16 @@ def parse_dashboard(html: str) -> list[dict]:
     if assignments:
         return [a.to_dict() for a in assignments]
 
+    # Priority 5: Text patterns in HTML
+    assignments = _parse_text_patterns(soup)
+    if assignments:
+        return [a.to_dict() for a in assignments]
+
+    # Priority 6: Parse as plain text (edge case)
+    assignments = _parse_plain_text(html)
+    if assignments:
+        return [a.to_dict() for a in assignments]
+
     return []
 
 
@@ -267,22 +415,172 @@ def extract_assignment_detail(html: str) -> dict:
     """
     Parse an individual assignment page to extract description and metadata.
 
-    Called when we fetch each assignment's detail page (future enhancement).
-    """
-    soup = BeautifulSoup(html, "html.parser")
+    The captured content might be rendered plain text (from Ctrl+A/Ctrl+V
+    on a live page) OR raw HTML. Handles both cases.
 
-    # Moodle assignment description is usually in .no-overflow or #intro
-    desc_el = soup.select_one(".no-overflow, #intro, [data-region='assignment-info']")
-    description = desc_el.get_text(strip=True) if desc_el else ""
+    For plain text: remove common header/footer noise lines and return
+    as-is, trimmed to 20K chars.
+
+    For HTML: use BeautifulSoup selectors, fall back to body text.
+    """
+    raw_len = len(html)
+    stripped = html.strip()
+
+    # ── Detect: is this plain text or HTML? ────────────────────────────
+    is_plain_text = not stripped.startswith("<") or "<html" not in stripped[:200].lower()
+
+    if is_plain_text:
+        # ── Plain-text path ────────────────────────────────────────────
+        lines = stripped.split("\n")
+
+        # Step 1: find where the actual assignment content starts.
+        #    Look for "Completion requirements", "To do:", "Due:", "Opened:"
+        #    which signal the assignment info block.
+        content_start = None
+        for i, line in enumerate(lines):
+            clean = line.strip()
+            if (
+                clean.startswith("Completion requirements")
+                or clean.startswith("To do:")
+                or clean.startswith("Due:")
+                or clean.startswith("Opened:")
+            ):
+                content_start = i
+                break
+
+        # Step 2: find where the content ends.
+        #    Look for "Submission status", "Attempt number", "Jump to...",
+        #    "Grading status", "Time remaining", "Last modified"
+        content_end = None
+        if content_start is not None:
+            for i in range(content_start, len(lines)):
+                clean = lines[i].strip()
+                if (
+                    clean.startswith("Submission status")
+                    or clean.startswith("Attempt number")
+                    or clean.startswith("Jump to...")
+                    or clean.startswith("Grading status")
+                    or clean.startswith("Time remaining")
+                    or clean.startswith("Last modified")
+                    or clean.startswith("Submission comments")
+                ):
+                    content_end = i
+                    break
+
+        if content_start is not None:
+            relevant = lines[content_start:content_end] if content_end else lines[content_start:]
+        else:
+            # Fallback: take everything (less ideal)
+            relevant = lines
+
+        # Step 3: clean up — strip whitespace, remove pure separators,
+        #    collapse duplicate consecutive lines, strip common chrome.
+        cleaned = []
+        seen = set()
+        noise_prefixes = [
+            "Skip to main content", "NC State", "WolfWare",
+            "Home", "Dashboard", "My courses",
+            "Collapse", "Blocks", "Jump to...",
+            "Submission status", "Grading status",
+            "Time remaining", "Last modified",
+            "Submission comments", "CommentsComments",
+            "-------------------------------",
+        ]
+        for line in relevant:
+            clean = line.strip()
+            if not clean:
+                continue
+            # Pure separator lines
+            if all(c in "-=_•·" for c in clean):
+                continue
+            # Common chrome
+            skip = False
+            for prefix in noise_prefixes:
+                if clean.startswith(prefix):
+                    skip = True
+                    break
+            if skip:
+                continue
+            # Deduplicate consecutive identical lines
+            if cleaned and clean == cleaned[-1]:
+                continue
+            cleaned.append(clean)
+
+        description = "\n".join(cleaned)
+        print(f"      plain-text: {raw_len} raw → {len(description)} chars (content-section extraction)")
+
+    else:
+        # ── HTML path ──────────────────────────────────────────────────
+        soup = BeautifulSoup(html, "html.parser")
+
+        for tag in soup.select("script, style, nav, header, footer, .navbar, .footer, .breadcrumb, .block_navigation, #page-footer, .drawer, .block"):
+            tag.decompose()
+
+        description = ""
+        desc_el = soup.select_one(
+            ".no-overflow, #intro, [data-region='assignment-info'], "
+            ".activity-description, .generalbox, .box.py-3, "
+            "div[data-activityname] div.description, .assignmentcontent, "
+            "#page-content, [role='main']"
+        )
+        if desc_el:
+            description = desc_el.get_text("\n", strip=True)
+
+        if not description or len(description) < 50:
+            body = soup.find("body")
+            if body:
+                description = body.get_text("\n", strip=True)
+
+        print(f"      html: {raw_len} raw → {len(description)} chars after extraction")
+
+    description = description.strip()[:20000]
 
     # Due date from the assignment info section
-    date_el = soup.select_one(
-        "[data-region='activity-dates'], .assign-due-date, "
-        "dt:contains('Due') + dd, th:contains('Due') + td"
-    )
+    date_el = None
+    try:
+        soup = BeautifulSoup(html, "html.parser") if not is_plain_text else None
+        if soup:
+            date_el = soup.select_one(
+                "[data-region='activity-dates'], .assign-due-date, "
+                "dt:contains('Due') + dd, th:contains('Due') + td"
+            )
+    except Exception:
+        pass
     due_date = date_el.get_text(strip=True) if date_el else ""
 
     return {
         "description": description,
         "due_date": due_date,
     }
+
+
+def enrich_assignments_with_descriptions(assignments: list[dict]) -> list[dict]:
+    """
+    Take a list of assignment dicts (from parse_dashboard), extract the
+    `_page_html` raw page content from each, and run extract_assignment_detail
+    to produce clean AI-grade description text.
+
+    The description is stored under the existing `description` key, overwriting
+    the dashboard-level placeholder (e.g. "Assignment is due").
+    The raw `_page_html` is removed afterward (not for the user).
+
+    Assignments that have no `_page_html` are left unchanged.
+    """
+    for a in assignments:
+        page_html = a.pop("_page_html", "")
+        if not page_html:
+            print(f"      ⚠️  No _page_html for '{a.get('title', '?')}' — grab may have failed")
+            continue
+        try:
+            detail = extract_assignment_detail(page_html)
+            desc = detail.get("description", "")
+            if desc and len(desc) > 10:  # Very low bar — just need more than nothing
+                old_len = len(a.get("description", "") or "")
+                a["description"] = desc
+                print(f"      ✅ Replaced placeholder ({old_len} chars) with extracted text ({len(desc)} chars)")
+            else:
+                print(f"      ⚠️  Extracted only {len(desc)} chars — keeping original")
+        except Exception as e:
+            print(f"      ❌ Extraction error: {e}")
+
+    return assignments
