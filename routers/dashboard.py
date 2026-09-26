@@ -20,6 +20,7 @@ from datetime import datetime as _datetime
 from services.moodle_scraper import parse_dashboard, extract_assignment_detail, enrich_assignments_with_descriptions
 from services.gemini import ask_gemini, ask_gemini_structured
 from services.moodle_browser import open_dashboard_and_grab, grab_moodle_page, grab_assignment_descriptions
+from routers.quiz_helpers import parse_quiz_questions, render_interactive_quiz
 
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
 
@@ -517,7 +518,7 @@ async def generate_quiz(
     due_date: str = Form(""),
     description: str = Form(""),
 ):
-    """Generate a practice quiz for a specific assignment via Gemini."""
+    """Generate a multiple-choice practice quiz for a specific assignment."""
     context_parts = [f"Assignment: {assignment}"]
     if course:
         context_parts.append(f"Course: {course}")
@@ -529,37 +530,45 @@ async def generate_quiz(
     context = "\n".join(context_parts)
 
     prompt = (
-        f"Create a short practice quiz for the assignment: '{assignment}'.\n"
-        f"Include 3-5 questions covering the key concepts.\n"
-        f"For each question:\n"
-        f"- Q: the question\n"
-        f"- A: the correct answer\n"
-        f"- E: a brief explanation of why it's correct\n\n"
-        f"Use this format:\n"
+        f"Create a multiple-choice practice quiz for the assignment: '{assignment}'.\n"
+        f"Include exactly 3 questions covering the key concepts.\n"
+        f"Each question must have exactly 4 options (A, B, C, D).\n"
+        f"Use this EXACT format for each question:\n"
         f"### Question 1\n"
-        f"**Q:** ...\n"
-        f"**A:** ...\n"
-        f"**E:** ..."
+        f"Q: [the question text]\n"
+        f"A) [option A]\n"
+        f"B) [option B]\n"
+        f"C) [option C]\n"
+        f"D) [option D]\n"
+        f"ANSWER: [correct letter]\n"
+        f"EXPLANATION: [brief explanation of why this is correct]\n"
     )
 
     result = await ask_gemini_structured(
         prompt=prompt,
         context=context,
         system_prompt=(
-            "You are a tutor creating practice quizzes. "
+            "You are a tutor creating multiple-choice practice quizzes. "
             "Make questions that test understanding, not just recall. "
-            "Always include explanations for the correct answers."
+            "Provide thorough explanations that teach the concept."
         ),
     )
 
-    return f"""
-    <div class="p-4 bg-green-50 border border-green-200 rounded-lg text-sm mt-3">
-        <p class="font-semibold text-green-800 mb-2">📝 Practice Quiz</p>
-        <div class="text-gray-700 prose prose-sm max-w-none quiz-content">
-            {_render_markdown(result)}
+    # Parse the response into structured questions
+    questions = parse_quiz_questions(result)
+    if not questions:
+        # Fallback: render as markdown if parsing fails
+        return f"""
+        <div class="p-4 bg-green-50 border border-green-200 rounded-lg text-sm mt-3">
+            <p class="font-semibold text-green-800 mb-2">📝 Practice Quiz</p>
+            <div class="text-gray-700 prose prose-sm max-w-none quiz-content">
+                {_render_markdown(result)}
+            </div>
         </div>
-    </div>
-    """
+        """
+
+    # Render as interactive multiple-choice with Alpine.js
+    return render_interactive_quiz(questions)
 
 
 # ── Helpers ────────────────────────────────────────────────────────────
