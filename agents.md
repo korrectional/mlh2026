@@ -2,6 +2,8 @@
 
 ## Overview
 Never commit without my permission
+Don't check for changes in github without permission
+Always get my permission before you start making test cases
 
 A **local-only** AI toolkit that runs entirely on your laptop. No cloud deployment, no API proxies, no third-party servers. FastAPI serves a browser frontend, and everything — camera, mic, file system, mouse control — happens on `localhost`.
 
