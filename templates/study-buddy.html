@@ -7,26 +7,26 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@300..700&family=Geist+Mono:wght@400..600&display=swap">
 <style>
-    /* Dark monochrome theme, scoped to this page: overrides the shared light shell without editing base.html. */
+    /* Dark blue monotone theme, scoped to this page: overrides the shared light shell without editing base.html. */
     :root { color-scheme: dark; }
     [x-cloak] { display: none !important; }
-    body.bg-gray-50 { background: #0a0a0a; color: #d4d4d4; font-family: "Geist", ui-sans-serif, system-ui, sans-serif; }
-    ::selection { background: #fafafa; color: #0a0a0a; }
-    nav.bg-white { background: rgba(10, 10, 10, 0.72); border-color: #1c1c1c; box-shadow: none; backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); }
+    body.bg-gray-50 { background: #060b1a; color: #c3d3f5; font-family: "Geist", ui-sans-serif, system-ui, sans-serif; }
+    ::selection { background: #e3ecff; color: #060b1a; }
+    nav.bg-white { background: rgba(6, 11, 26, 0.72); border-color: #16203a; box-shadow: none; backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); }
     nav.bg-white a { filter: grayscale(1); }
-    nav a.text-brand-600, nav a.text-brand-600:hover { color: #fafafa; }
-    nav a.text-gray-600 { color: #8a8a8a; }
-    nav a.text-gray-600:hover { color: #fafafa; background: #171717; }
-    nav a.text-gray-600[href="/study-buddy"] { color: #fafafa; background: #171717; }
+    nav a.text-brand-600, nav a.text-brand-600:hover { color: #e3ecff; }
+    nav a.text-gray-600 { color: #7890c8; }
+    nav a.text-gray-600:hover { color: #e3ecff; background: #131d36; }
+    nav a.text-gray-600[href="/study-buddy"] { color: #e3ecff; background: #131d36; }
 
     .sb-mono { font-family: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace; }
     .sb-grid {
-        background-image: radial-gradient(rgba(255, 255, 255, 0.09) 1px, transparent 1px);
+        background-image: radial-gradient(rgba(147, 178, 255, 0.13) 1px, transparent 1px);
         background-size: 22px 22px;
         -webkit-mask-image: radial-gradient(ellipse 60% 70% at 50% 0%, #000 20%, transparent 75%);
         mask-image: radial-gradient(ellipse 60% 70% at 50% 0%, #000 20%, transparent 75%);
     }
-    .sb-glow { background: radial-gradient(520px circle at 50% 0%, rgba(255, 255, 255, 0.08), transparent 70%); }
+    .sb-glow { background: radial-gradient(520px circle at 50% 0%, rgba(96, 140, 255, 0.16), transparent 70%); }
     #sb-stage { scroll-margin-top: 72px; }
     input[type="date"]::-webkit-calendar-picker-indicator { filter: invert(1); opacity: 0.6; }
 
@@ -44,6 +44,23 @@
 </style>
 
 <script>
+    // Page-scoped palette: Tailwind's neutral grays become a navy-to-pale-blue scale, and white/black become
+    // pale blue/deep navy, so every partial turns blue without touching base.html or the other tools.
+    (function () {
+        var cfg = window.tailwind && tailwind.config ? tailwind.config : {};
+        var theme = cfg.theme || {};
+        var extend = theme.extend || {};
+        var colors = Object.assign({}, extend.colors || {}, {
+            white: '#e3ecff',
+            black: '#060b1a',
+            neutral: {
+                50: '#f0f5ff', 100: '#e1eafc', 200: '#c3d3f5', 300: '#9fb6e6', 400: '#7890c8', 500: '#5a70a6',
+                600: '#435685', 700: '#2f3f66', 800: '#1f2c4d', 900: '#131d36', 950: '#0b1226',
+            },
+        });
+        tailwind.config = Object.assign({}, cfg, { theme: Object.assign({}, theme, { extend: Object.assign({}, extend, { colors: colors }) }) });
+    })();
+
     function studyBuddy() {
         return {
             dragging: false,

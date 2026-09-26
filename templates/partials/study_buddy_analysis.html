@@ -20,7 +20,7 @@
         <div class="pb-5">
             <div class="relative h-2 rounded-full bg-gradient-to-r from-neutral-800 via-neutral-500 to-white">
                 {% for boundary in [4, 6, 8] %}
-                <span class="absolute top-0 h-2 w-px bg-[#0a0a0a]" style="left: {{ ((boundary - 1) / 9 * 100) | round(2) }}%"></span>
+                <span class="absolute top-0 h-2 w-px bg-[#060b1a]" style="left: {{ ((boundary - 1) / 9 * 100) | round(2) }}%"></span>
                 {% endfor %}
                 <span class="absolute top-1/2 h-5 w-5 -translate-x-1/2 -translate-y-1/2 rounded-full border-4 border-neutral-950 bg-white shadow-[0_0_0_1px_rgba(255,255,255,0.4)]"
                       style="left: {{ ((a.score - 1) / 9 * 100) | round(2) }}%"></span>
