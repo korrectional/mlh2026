@@ -22,7 +22,7 @@ The other two tools (Study Buddy, Lecture Note-Taker) are frontend shells with s
 
 | Tool | Status | What's Done | What's Missing |
 |---|---|---|---|
-| 📋 Dashboard Inspector | **✅ Complete** | Full scraper, Tab-navigation description extraction, Gemini study points + quiz generation, PyAutoGUI browser automation, polished HTMX frontend | User needs `.env` with `GEMINI_API_KEY` for AI features. No bookmarklet yet, no persistent history |
+| 📋 Dashboard Inspector | **✅ Complete** | Full scraper, Tab-navigation description extraction, Gemini study points + interactive multiple-choice quiz, PyAutoGUI browser automation, JSON cache, polished HTMX frontend | No bookmarklet yet |
 | 📄 Study Buddy | 🟡 **Stub** | Frontend shell (drag-drop, loading spinner, quiz container), router stubs, Alpine.js state | `services/pdf_parser.py` is a stub, `routers/study_buddy.py` returns placeholder HTML, no Gemini quiz generation |
 | 🎙️ Lecture Note-Taker | 🟡 **Stub** | Frontend shell (recording button, timer, notes/flags panels), WebSocket endpoint stub | `services/audio_processor.py` is stub, no audio streaming, no Gemini multimodal integration |
 
@@ -75,9 +75,9 @@ Tab counts: `tab_first=22`, `tab_next=2` — configurable parameters.
 - Lazy-loads the `google-genai` client (graceful stub when no API key present)
 - `ask_gemini(prompt, context, system_prompt)` — freeform response
 - `ask_gemini_structured(prompt, context, system_prompt)` — adds markdown-structure instruction
-- Default model: `gemini-2.0-flash`
+- Default model: `gemini-3.6-flash`
 
-**Currently blocked on:** User needs to `copy .env.example .env` and set `GEMINI_API_KEY`.
+API key is set in `.env` — AI features are active.
 
 ### HTMX Pattern (Dashboard Tool)
 
@@ -96,6 +96,15 @@ Cards send `description` (the scraped assignment text) as hidden form data in `h
 ### Jinja2 Rendering
 
 Templates use a direct Jinja2 `Environment` (not Starlette's `Jinja2Templates`) for Python 3.14 compatibility with `datetime.strptime` changes. Each router that needs templates creates its own `_jinja_env` pointing to `templates/`.
+
+### Quiz Format
+
+Quiz is rendered as interactive multiple-choice with plain JavaScript (not Alpine.js):
+- 3 questions per quiz, each with 4 options (A-D)
+- Click an answer → immediately shows ✓ (green) or ✗ (red) + explanation
+- Once answered, locked — button is removed to prevent re-calling Gemini
+- Quiz parsing/rendering lives in `routers/quiz_helpers.py`
+- Gemini is instructed to avoid LaTeX (`$...$`) — uses plain text formulas
 
 ### Dashboard Endpoints
 
