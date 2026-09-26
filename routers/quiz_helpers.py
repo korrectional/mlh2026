@@ -81,7 +81,7 @@ def render_interactive_quiz(questions: list[dict]) -> str:
     for qi, q in enumerate(questions):
         options_html = ""
         for opt in q["options"]:
-            label = esc(opt["text"])
+            label = opt["text"]
             opt_id = f"quiz_q{qi}_{opt['label']}"
             options_html += f'''
             <div id="{opt_id}_wrapper"
@@ -105,7 +105,7 @@ def render_interactive_quiz(questions: list[dict]) -> str:
         q_html += f'''
         <div class="quiz-question mb-4" id="quiz_q_div_{qi}">
             <p class="font-semibold text-gray-900 mb-2">
-                Question {qi + 1}: {esc(q['question'])}
+                Question {qi + 1}: {q['question']}
             </p>
             <div class="space-y-2" id="quiz_q_options_{qi}">
                 {options_html}

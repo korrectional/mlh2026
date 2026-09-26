@@ -550,7 +550,10 @@ async def generate_quiz(
         system_prompt=(
             "You are a tutor creating multiple-choice practice quizzes. "
             "Make questions that test understanding, not just recall. "
-            "Provide thorough explanations that teach the concept."
+            "Provide thorough explanations that teach the concept. "
+            "IMPORTANT: Do NOT use LaTeX or math notation ($...$). "
+            "Write chemical formulas and math expressions in plain text "
+            "(e.g., 'NCO^-' instead of '$\\\\text{NCO}^-$')."
         ),
     )
 
