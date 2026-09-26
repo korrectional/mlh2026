@@ -1,35 +1,75 @@
 {% extends "base.html" %}
 
-{% block title %}MLH Toolkit — Home{% endblock %}
+{% block title %}Student Toolkit{% endblock %}
 
 {% block content %}
-<div class="text-center py-12">
-    <h1 class="text-4xl font-bold text-gray-900 mb-4">🧰 MLH Toolkit</h1>
-    <p class="text-lg text-gray-500 mb-10">Pick a tool — everything runs locally, nothing hits the cloud (except Gemini).</p>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@300..700&family=Geist+Mono:wght@400..600&display=swap">
+<style>
+    /* Dark theme scoped to this page to match the three tools; base.html only carries the shared nav. */
+    :root { color-scheme: dark; }
+    body.bg-gray-50 { background: #0a0a0a; color: #d4d4d4; font-family: "Geist", ui-sans-serif, system-ui, sans-serif; }
+    ::selection { background: #fafafa; color: #0a0a0a; }
+    nav.bg-white { background: rgba(10, 10, 10, 0.72); border-color: #1c1c1c; box-shadow: none; backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); }
+    nav a.text-brand-600, nav a.text-brand-600:hover { color: #fafafa; }
+    nav a.text-gray-600 { color: #8a8a8a; }
+    nav a.text-gray-600:hover { color: #fafafa; background: #171717; }
+    .home-mono { font-family: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace; }
+</style>
+<script>
+    // The shared nav (base.html) has emoji labels; strip them on this page only.
+    document.addEventListener('DOMContentLoaded', function () {
+        var emoji = /[\u{1F000}-\u{1FAFF}\u{2300}-\u{23FF}\u{2600}-\u{27BF}\u{FE0F}\u{200D}]/gu;
+        document.querySelectorAll('nav a').forEach(function (a) {
+            var walker = document.createTreeWalker(a, NodeFilter.SHOW_TEXT);
+            var node;
+            while ((node = walker.nextNode())) { node.nodeValue = node.nodeValue.replace(emoji, ''); }
+            a.innerHTML = a.innerHTML.trim();
+        });
+    });
+</script>
 
-    <div class="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-4xl mx-auto">
+<div class="space-y-8">
+    <section class="relative flex min-h-[380px] items-end overflow-hidden rounded-3xl border border-neutral-800 bg-neutral-950">
+        <img src="/static/img/home-belltower.jpg" alt="The Memorial Belltower at NC State"
+             class="absolute inset-0 h-full w-full object-cover object-[center_30%]">
+        <div aria-hidden="true" class="absolute inset-0 bg-gradient-to-t from-[#0a0a0a] via-[#0a0a0a]/55 to-transparent"></div>
+        <div aria-hidden="true" class="absolute inset-0 bg-gradient-to-r from-[#0a0a0a]/75 via-[#0a0a0a]/20 to-transparent"></div>
+        <div aria-hidden="true" class="absolute inset-x-0 top-0 h-0.5 bg-[#CC0000]"></div>
+        <div class="relative max-w-2xl space-y-4 p-6 pb-10 sm:p-10">
+            <span class="home-mono inline-flex items-center gap-2 rounded-full border border-neutral-700 bg-black/40 px-3 py-1 text-[11px] uppercase tracking-[0.2em] text-neutral-300 backdrop-blur-sm">
+                <span class="h-1.5 w-1.5 animate-pulse rounded-full bg-[#CC0000]"></span>
+                NC State · Student Toolkit
+            </span>
+            <h1 class="text-4xl font-semibold leading-[1.05] tracking-tight text-white sm:text-5xl">
+                Study smarter.<br><span class="text-neutral-300">All in one place.</span>
+            </h1>
+            <p class="max-w-lg leading-relaxed text-neutral-300">
+                Three tools built for NC State students. Everything runs on your laptop, and only Gemini runs in the cloud.
+            </p>
+        </div>
+    </section>
 
-        <!-- Lecture Note-Taker -->
-        <a href="/lecture" class="block p-6 bg-white rounded-xl border hover:shadow-lg hover:-translate-y-0.5 transition-all group">
-            <div class="text-4xl mb-3">🎙️</div>
-            <h2 class="text-lg font-semibold text-gray-900 group-hover:text-brand-600">Live Lecture Note-Taker</h2>
-            <p class="text-sm text-gray-500 mt-2">Record a lecture. Gemini generates structured notes, flags review concepts, synced to slide timestamps.</p>
+    <div class="grid grid-cols-1 gap-4 md:grid-cols-3">
+        <a href="/lecture" class="group flex flex-col rounded-3xl border border-neutral-800 bg-neutral-950 p-6 transition hover:-translate-y-0.5 hover:border-neutral-600">
+            <span class="home-mono text-[11px] uppercase tracking-[0.2em] text-neutral-500">01 · Lecture</span>
+            <h2 class="mt-3 text-lg font-semibold tracking-tight text-white">Lecture Note-Taker</h2>
+            <p class="mt-2 flex-1 text-sm leading-relaxed text-neutral-400">Record a lecture. Gemini writes structured notes, a full transcript, and the concepts worth reviewing.</p>
+            <span class="mt-5 inline-flex items-center gap-1.5 text-sm text-neutral-300 transition group-hover:text-white">Open <span aria-hidden="true">&rarr;</span></span>
         </a>
-
-        <!-- Study Buddy -->
-        <a href="/study-buddy" class="block p-6 bg-white rounded-xl border hover:shadow-lg hover:-translate-y-0.5 transition-all group">
-            <div class="text-4xl mb-3">📄</div>
-            <h2 class="text-lg font-semibold text-gray-900 group-hover:text-brand-600">Study Buddy from PDFs</h2>
-            <p class="text-sm text-gray-500 mt-2">Drop lecture slides or a textbook. Gemini generates practice quizzes and explains wrong answers conversationally.</p>
+        <a href="/study-buddy" class="group flex flex-col rounded-3xl border border-neutral-800 bg-neutral-950 p-6 transition hover:-translate-y-0.5 hover:border-neutral-600">
+            <span class="home-mono text-[11px] uppercase tracking-[0.2em] text-neutral-500">02 · Study</span>
+            <h2 class="mt-3 text-lg font-semibold tracking-tight text-white">Study Buddy</h2>
+            <p class="mt-2 flex-1 text-sm leading-relaxed text-neutral-400">Drop slides or snap a page. Get a complexity score, a time estimate, and daily sessions that finish before your exam.</p>
+            <span class="mt-5 inline-flex items-center gap-1.5 text-sm text-neutral-300 transition group-hover:text-white">Open <span aria-hidden="true">&rarr;</span></span>
         </a>
-
-        <!-- Dashboard Inspector -->
-        <a href="/dashboard" class="block p-6 bg-white rounded-xl border hover:shadow-lg hover:-translate-y-0.5 transition-all group">
-            <div class="text-4xl mb-3">📋</div>
-            <h2 class="text-lg font-semibold text-gray-900 group-hover:text-brand-600">Dashboard Inspector</h2>
-            <p class="text-sm text-gray-500 mt-2">Scan your NCSU Moodle dashboard for due-soon assignments. Get study points and optionally a practice quiz.</p>
+        <a href="/dashboard" class="group flex flex-col rounded-3xl border border-neutral-800 bg-neutral-950 p-6 transition hover:-translate-y-0.5 hover:border-neutral-600">
+            <span class="home-mono text-[11px] uppercase tracking-[0.2em] text-neutral-500">03 · Moodle</span>
+            <h2 class="mt-3 text-lg font-semibold tracking-tight text-white">Dashboard Inspector</h2>
+            <p class="mt-2 flex-1 text-sm leading-relaxed text-neutral-400">Scan your NCSU Moodle dashboard for what's due soon, then get study points and a practice quiz for each assignment.</p>
+            <span class="mt-5 inline-flex items-center gap-1.5 text-sm text-neutral-300 transition group-hover:text-white">Open <span aria-hidden="true">&rarr;</span></span>
         </a>
-
     </div>
 </div>
 {% endblock %}

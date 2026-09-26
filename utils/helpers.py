@@ -2,7 +2,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 import os
 
-load_dotenv()
+load_dotenv(override=True)  # .env wins over a stale key inherited from the shell or reloader
 
 PROJECT_ROOT = Path(__file__).parent
 STATIC_DIR = PROJECT_ROOT / "static"
