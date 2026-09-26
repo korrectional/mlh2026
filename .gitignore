@@ -42,6 +42,7 @@ next-env.d.ts
 .env.local
 .env
 __pycache__/
+.pytest_cache/
 *.pyc
 *.pyo
 *.egg-info/
@@ -60,3 +61,5 @@ Thumbs.db
 *.mp4
 screenshots/
 lecture_history/
+nul
+dashboard_cache.json

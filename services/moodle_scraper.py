@@ -415,22 +415,172 @@ def extract_assignment_detail(html: str) -> dict:
     """
     Parse an individual assignment page to extract description and metadata.
 
-    Called when we fetch each assignment's detail page (future enhancement).
-    """
-    soup = BeautifulSoup(html, "html.parser")
+    The captured content might be rendered plain text (from Ctrl+A/Ctrl+V
+    on a live page) OR raw HTML. Handles both cases.
 
-    # Moodle assignment description is usually in .no-overflow or #intro
-    desc_el = soup.select_one(".no-overflow, #intro, [data-region='assignment-info']")
-    description = desc_el.get_text(strip=True) if desc_el else ""
+    For plain text: remove common header/footer noise lines and return
+    as-is, trimmed to 20K chars.
+
+    For HTML: use BeautifulSoup selectors, fall back to body text.
+    """
+    raw_len = len(html)
+    stripped = html.strip()
+
+    # ── Detect: is this plain text or HTML? ────────────────────────────
+    is_plain_text = not stripped.startswith("<") or "<html" not in stripped[:200].lower()
+
+    if is_plain_text:
+        # ── Plain-text path ────────────────────────────────────────────
+        lines = stripped.split("\n")
+
+        # Step 1: find where the actual assignment content starts.
+        #    Look for "Completion requirements", "To do:", "Due:", "Opened:"
+        #    which signal the assignment info block.
+        content_start = None
+        for i, line in enumerate(lines):
+            clean = line.strip()
+            if (
+                clean.startswith("Completion requirements")
+                or clean.startswith("To do:")
+                or clean.startswith("Due:")
+                or clean.startswith("Opened:")
+            ):
+                content_start = i
+                break
+
+        # Step 2: find where the content ends.
+        #    Look for "Submission status", "Attempt number", "Jump to...",
+        #    "Grading status", "Time remaining", "Last modified"
+        content_end = None
+        if content_start is not None:
+            for i in range(content_start, len(lines)):
+                clean = lines[i].strip()
+                if (
+                    clean.startswith("Submission status")
+                    or clean.startswith("Attempt number")
+                    or clean.startswith("Jump to...")
+                    or clean.startswith("Grading status")
+                    or clean.startswith("Time remaining")
+                    or clean.startswith("Last modified")
+                    or clean.startswith("Submission comments")
+                ):
+                    content_end = i
+                    break
+
+        if content_start is not None:
+            relevant = lines[content_start:content_end] if content_end else lines[content_start:]
+        else:
+            # Fallback: take everything (less ideal)
+            relevant = lines
+
+        # Step 3: clean up — strip whitespace, remove pure separators,
+        #    collapse duplicate consecutive lines, strip common chrome.
+        cleaned = []
+        seen = set()
+        noise_prefixes = [
+            "Skip to main content", "NC State", "WolfWare",
+            "Home", "Dashboard", "My courses",
+            "Collapse", "Blocks", "Jump to...",
+            "Submission status", "Grading status",
+            "Time remaining", "Last modified",
+            "Submission comments", "CommentsComments",
+            "-------------------------------",
+        ]
+        for line in relevant:
+            clean = line.strip()
+            if not clean:
+                continue
+            # Pure separator lines
+            if all(c in "-=_•·" for c in clean):
+                continue
+            # Common chrome
+            skip = False
+            for prefix in noise_prefixes:
+                if clean.startswith(prefix):
+                    skip = True
+                    break
+            if skip:
+                continue
+            # Deduplicate consecutive identical lines
+            if cleaned and clean == cleaned[-1]:
+                continue
+            cleaned.append(clean)
+
+        description = "\n".join(cleaned)
+        print(f"      plain-text: {raw_len} raw → {len(description)} chars (content-section extraction)")
+
+    else:
+        # ── HTML path ──────────────────────────────────────────────────
+        soup = BeautifulSoup(html, "html.parser")
+
+        for tag in soup.select("script, style, nav, header, footer, .navbar, .footer, .breadcrumb, .block_navigation, #page-footer, .drawer, .block"):
+            tag.decompose()
+
+        description = ""
+        desc_el = soup.select_one(
+            ".no-overflow, #intro, [data-region='assignment-info'], "
+            ".activity-description, .generalbox, .box.py-3, "
+            "div[data-activityname] div.description, .assignmentcontent, "
+            "#page-content, [role='main']"
+        )
+        if desc_el:
+            description = desc_el.get_text("\n", strip=True)
+
+        if not description or len(description) < 50:
+            body = soup.find("body")
+            if body:
+                description = body.get_text("\n", strip=True)
+
+        print(f"      html: {raw_len} raw → {len(description)} chars after extraction")
+
+    description = description.strip()[:20000]
 
     # Due date from the assignment info section
-    date_el = soup.select_one(
-        "[data-region='activity-dates'], .assign-due-date, "
-        "dt:contains('Due') + dd, th:contains('Due') + td"
-    )
+    date_el = None
+    try:
+        soup = BeautifulSoup(html, "html.parser") if not is_plain_text else None
+        if soup:
+            date_el = soup.select_one(
+                "[data-region='activity-dates'], .assign-due-date, "
+                "dt:contains('Due') + dd, th:contains('Due') + td"
+            )
+    except Exception:
+        pass
     due_date = date_el.get_text(strip=True) if date_el else ""
 
     return {
         "description": description,
         "due_date": due_date,
     }
+
+
+def enrich_assignments_with_descriptions(assignments: list[dict]) -> list[dict]:
+    """
+    Take a list of assignment dicts (from parse_dashboard), extract the
+    `_page_html` raw page content from each, and run extract_assignment_detail
+    to produce clean AI-grade description text.
+
+    The description is stored under the existing `description` key, overwriting
+    the dashboard-level placeholder (e.g. "Assignment is due").
+    The raw `_page_html` is removed afterward (not for the user).
+
+    Assignments that have no `_page_html` are left unchanged.
+    """
+    for a in assignments:
+        page_html = a.pop("_page_html", "")
+        if not page_html:
+            print(f"      ⚠️  No _page_html for '{a.get('title', '?')}' — grab may have failed")
+            continue
+        try:
+            detail = extract_assignment_detail(page_html)
+            desc = detail.get("description", "")
+            if desc and len(desc) > 10:  # Very low bar — just need more than nothing
+                old_len = len(a.get("description", "") or "")
+                a["description"] = desc
+                print(f"      ✅ Replaced placeholder ({old_len} chars) with extracted text ({len(desc)} chars)")
+            else:
+                print(f"      ⚠️  Extracted only {len(desc)} chars — keeping original")
+        except Exception as e:
+            print(f"      ❌ Extraction error: {e}")
+
+    return assignments

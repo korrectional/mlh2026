@@ -26,7 +26,7 @@ from fastapi.responses import HTMLResponse
 from jinja2 import Environment, FileSystemLoader
 
 from services import study_plan
-from services.gemini import ask_gemini, ask_gemini_json
+from services.gemini import ask_gemini, ask_gemini_json, ask_gemini_json_with_image, ask_gemini_with_image
 from services.pdf_parser import extract_text_from_pdf
 
 router = APIRouter(prefix="/study-buddy", tags=["study-buddy"])
@@ -93,6 +93,128 @@ async def upload_pdf(file: UploadFile = File(...), mode: str = Form("plan"), num
     if mode == "quiz":
         return await _build_quiz(file.filename, text, num_questions)
     return await _build_analysis(file.filename, text)
+
+
+# ── Image upload (photo of a page) ────────────────────────────────────
+
+MAX_IMAGE_BYTES = 10 * 1024 * 1024
+
+
+@router.post("/upload-image", response_class=HTMLResponse)
+async def upload_image(
+    file: UploadFile = File(...),
+    mode: str = Form("plan"),
+    num_questions: int = Form(5),
+):
+    """Accept a photo of a textbook/notes page, send to Gemini as an image."""
+    if not (file.content_type or "").startswith("image/"):
+        return _error("That isn't an image. Take a photo of your textbook or notes page.")
+
+    image_bytes = await file.read()
+    if len(image_bytes) > MAX_IMAGE_BYTES:
+        return _error("That image is over 10 MB. Try a smaller photo.")
+
+    mime_type = file.content_type or "image/jpeg"
+    filename = file.filename or "photo.jpg"
+
+    if mode == "quiz":
+        return await _build_quiz_from_image(filename, image_bytes, mime_type, num_questions)
+    return await _build_analysis_from_image(filename, image_bytes, mime_type)
+
+
+async def _build_analysis_from_image(
+    filename: str, image_bytes: bytes, mime_type: str
+) -> HTMLResponse:
+    try:
+        raw = await ask_gemini_json_with_image(
+            prompt=_concepts_prompt(),
+            image_bytes=image_bytes,
+            mime_type=mime_type,
+            system_prompt=(
+                "You are an expert tutor. The user took a photo of their course material. "
+                "Read any text, diagrams, and formulas in the image."
+            ),
+        )
+        data = _as_object(json.loads(raw), "concepts")
+    except Exception as exc:
+        return _error(f"Analysis failed: {exc}")
+
+    concepts = _clean_concepts(data.get("concepts", []))
+    if len(concepts) < 3:
+        return _error(
+            "Couldn't find enough distinct concepts in that photo. "
+            "Try a clearer photo with the page flat and well-lit."
+        )
+
+    concepts = study_plan.prerequisite_order(concepts)
+    for c in concepts:
+        c["minutes"] = study_plan.concept_minutes(c)
+
+    plan_id = uuid.uuid4().hex
+    _plans[plan_id] = {
+        "id": plan_id,
+        "filename": filename,
+        "title": str(data.get("title") or "Your material"),
+        "concepts": concepts,
+        "analysis": study_plan.analyze(concepts),
+        "per_day": None,
+        "exam": None,
+        "start": date.today(),
+        "day": 1,
+        "completed": {},
+        "credited": 0,
+        "today": 0,
+        "reviewed_today": False,
+        "goal_days": set(),
+    }
+    return _render(
+        "partials/study_buddy_analysis.html",
+        plan=_plans[plan_id],
+        daily_options=DAILY_OPTIONS,
+    )
+
+
+async def _build_quiz_from_image(
+    filename: str, image_bytes: bytes, mime_type: str, num_questions: int
+) -> HTMLResponse:
+    if num_questions not in ALLOWED_QUESTION_COUNTS:
+        num_questions = 5
+
+    try:
+        raw = await ask_gemini_json_with_image(
+            prompt=_quiz_prompt(num_questions),
+            image_bytes=image_bytes,
+            mime_type=mime_type,
+            system_prompt=(
+                "You are a study buddy. The user took a photo of their course material. "
+                "Read any text, diagrams, and formulas in the image."
+            ),
+        )
+        data = _as_object(json.loads(raw), "questions")
+    except Exception as exc:
+        return _error(f"Quiz generation failed: {exc}")
+
+    questions = _clean_questions(data.get("questions", []))
+    if not questions:
+        return _error(
+            "Gemini didn't return usable questions from that photo. "
+            "Try a clearer photo with the page flat and well-lit."
+        )
+
+    quiz_id = uuid.uuid4().hex
+    _quizzes[quiz_id] = {
+        "title": str(data.get("title") or "Practice Quiz"),
+        "questions": questions,
+        "answers": {},
+        "source": "",  # no text context for image-based quizzes
+    }
+    return _render(
+        "partials/study_buddy_quiz.html",
+        quiz_id=quiz_id,
+        filename=filename,
+        title=_quizzes[quiz_id]["title"],
+        questions=questions,
+    )
 
 
 async def _build_analysis(filename: str, text: str) -> HTMLResponse:

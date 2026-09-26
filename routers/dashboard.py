@@ -6,15 +6,23 @@ Flow:
   2. Backend parses it → returns list of assignments with due dates
   3. User clicks "Study Points" or "Generate Quiz" for an assignment
   4. Gemini generates the content → returned as HTML snippets via HTMX
+
+Cache: scraped data is saved to a JSON file so page reloads don't
+re-trigger the PyAutoGUI scraping.
 """
+
+from __future__ import annotations
 
 from fastapi import APIRouter, Request, Form
 from fastapi.responses import HTMLResponse
 from pathlib import Path
+import json as _json
+from datetime import datetime as _datetime
 
-from services.moodle_scraper import parse_dashboard, extract_assignment_detail
+from services.moodle_scraper import parse_dashboard, extract_assignment_detail, enrich_assignments_with_descriptions
 from services.gemini import ask_gemini, ask_gemini_structured
-from services.moodle_browser import grab_moodle_page
+from services.moodle_browser import open_dashboard_and_grab, grab_moodle_page, grab_assignment_descriptions, grab_active_page
+from routers.quiz_helpers import parse_quiz_questions, render_interactive_quiz
 
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
 
@@ -26,23 +34,6 @@ _jinja_env = Environment(
     auto_reload=True,
 )
 
-# Inline SVG line icons (Lucide style) for the HTML snippets below.
-_SVG_OPEN = (
-    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" '
-    'stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="h-4 w-4 shrink-0" aria-hidden="true">'
-)
-_ICON_ARROW = _SVG_OPEN + '<path d="M7 7h10v10"/><path d="M7 17 17 7"/></svg>'
-_ICON_FILE = (
-    _SVG_OPEN
-    + '<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/>'
-    + '<path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M16 13H8"/><path d="M16 17H8"/><path d="M10 9H8"/></svg>'
-)
-_ICON_LINK = (
-    _SVG_OPEN
-    + '<path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>'
-    + '<path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>'
-)
-
 
 async def render_template(name: str, request: Request, **extra) -> HTMLResponse:
     """Render a Jinja2 template and return an HTMLResponse."""
@@ -51,14 +42,152 @@ async def render_template(name: str, request: Request, **extra) -> HTMLResponse:
     return HTMLResponse(template.render(**context))
 
 
+# ── Cache (persists scraped data across page reloads) ─────────────────
+
+_CACHE_FILE = Path(__file__).resolve().parent.parent / "dashboard_cache.json"
+
+
+def _save_cache(assignments: list[dict]) -> None:
+    """Save scraped assignments + timestamp to a JSON cache file."""
+    cache = {
+        "timestamp": _datetime.now().isoformat(),
+        "assignments": assignments,
+    }
+    _CACHE_FILE.write_text(_json.dumps(cache, indent=2, ensure_ascii=False), encoding="utf-8")
+
+
+def _load_cache() -> dict | None:
+    """Load cached assignments. Returns None if no cache or it's corrupt."""
+    if not _CACHE_FILE.exists():
+        return None
+    try:
+        data = _json.loads(_CACHE_FILE.read_text(encoding="utf-8"))
+        if "assignments" in data and "timestamp" in data:
+            return data
+    except Exception:
+        pass
+    return None
+
+
 # ── Page ───────────────────────────────────────────────────────────────
+
+MOODLE_URL = "https://moodle-courses2527.wolfware.ncsu.edu/my/"
+
 
 @router.get("/", response_class=HTMLResponse)
 async def dashboard_page(request: Request):
-    return await render_template("dashboard.html", request=request)
+    cache = _load_cache()
+    cached_html = ""
+    cached_time = ""
+    if cache and cache.get("assignments"):
+        cached_html = _render_cards(cache["assignments"])
+        try:
+            ts = _datetime.fromisoformat(cache["timestamp"])
+            cached_time = ts.strftime("%b %d, %Y at %I:%M %p")
+        except Exception:
+            cached_time = cache["timestamp"]
+
+    return await render_template(
+        "dashboard.html",
+        request=request,
+        cached_html=cached_html,
+        cached_time=cached_time,
+    )
 
 
-# ── Debug: load sample HTML ──────────────────────────────────────────
+# ── Open Moodle in browser ───────────────────────────────────────────
+
+@router.get("/open-moodle", response_class=HTMLResponse)
+async def open_moodle():
+    """Redirect the browser to the NCSU Moodle dashboard."""
+    return HTMLResponse(f'''
+    <!DOCTYPE html>
+    <html><head><meta charset="utf-8">
+    <title>Opening Moodle...</title>
+    <meta http-equiv="refresh" content="0;url={MOODLE_URL}">
+    <style>body {{ font-family: sans-serif; padding: 2em; text-align: center; }}</style>
+    </head><body>
+    <p> Opening Moodle dashboard...</p>
+    <p><a href="{MOODLE_URL}">Click here if not redirected</a></p>
+    </body></html>
+    ''')
+
+
+# ── Bookmarklet (future) ─────────────────────────────────────────────
+
+@router.get("/bookmarklet", response_class=HTMLResponse)
+async def bookmarklet_page():
+    """Page with a bookmarklet for one-click Moodle scraping."""
+    bookmarklet_js = (
+        "javascript:(function(){"
+        "var html=document.documentElement.outerHTML;"
+        "var x=new XMLHttpRequest();"
+        "x.open('POST','http://127.0.0.1:8000/dashboard/bookmarklet-capture',true);"
+        "x.setRequestHeader('Content-Type','application/x-www-form-urlencoded');"
+        "x.send('html='+encodeURIComponent(html));"
+        "alert('Sent to Dashboard Inspector!');"
+        "})()"
+    )
+    return HTMLResponse(f'''
+    <!DOCTYPE html>
+    <html><head><meta charset="utf-8">
+    <title>Dashboard Inspector Bookmarklet</title>
+    </head><body style="font-family: sans-serif; max-width: 600px; margin: 2em auto; line-height: 1.6;">
+    <h1> Bookmarklet</h1>
+    <p>Drag this link to your bookmarks bar:</p>
+    <p>
+        <a href="{bookmarklet_js}"
+           style="display: inline-block; padding: 12px 24px; background: #2563eb; color: white;
+                  text-decoration: none; border-radius: 8px; font-weight: bold;">
+            Send to Dashboard Inspector
+        </a>
+    </p>
+    <p>Then, when you're on your Moodle dashboard, click the bookmarklet.</p>
+    <p><a href="/dashboard/">← Back to Dashboard Inspector</a></p>
+    </body></html>
+    ''')
+
+
+# ── Open & grab (pyautogui flow) ───────────────────────────────────────
+
+@router.post("/fetch", response_class=HTMLResponse)
+async def fetch_moodle():
+    """Open Moodle dashboard in the user's browser."""
+    try:
+        open_moodle()
+        return '''
+        <div class="p-4 bg-green-50 border border-green-200 rounded-lg text-sm">
+            <p class="font-semibold text-green-800"> Moodle opened in your browser</p>
+            <p class="text-green-700 mt-1">Log into WolfWare, then switch back here and click <strong>"Grab it!"</strong></p>
+        </div>
+        '''
+    except Exception as e:
+        return f'''
+        <div class="p-4 bg-red-50 border border-red-200 rounded-lg text-sm">
+            <p class="font-semibold text-red-800"> Could not open browser</p>
+            <p class="text-red-700 mt-1">{e}</p>
+        </div>
+        '''
+
+
+
+
+@router.post("/bookmarklet-capture")
+async def bookmarklet_capture(html: str = Form("...")):
+    """Receive HTML from the bookmarklet and redirect back to the dashboard."""
+    from fastapi.responses import RedirectResponse
+    # Store in session or return to dashboard with results
+    # For now, redirect back to dashboard
+    return HTMLResponse('''
+    <!DOCTYPE html>
+    <html><head><meta charset="utf-8">
+    <title>Received!</title>
+    <style>body {{ font-family: sans-serif; padding: 2em; text-align: center; }}</style>
+    </head><body>
+    <p> Dashboard HTML captured! Go back to the Dashboard Inspector.</p>
+    <p><a href="/dashboard/">← Back to Dashboard Inspector</a></p>
+    </body></html>
+    ''')
 
 @router.get("/debug/sample", response_class=HTMLResponse)
 async def debug_sample():
@@ -68,47 +197,38 @@ async def debug_sample():
     assignments = parse_dashboard(html)
 
     if not assignments:
-        return "<div class='rounded-2xl border border-neutral-700 bg-neutral-900 p-4 text-sm text-neutral-300'>The sample HTML did not parse any assignments.</div>"
+        return "<p class='text-red-600'>Sample HTML didn't parse any assignments.</p>"
 
     rows = ""
     for i, a in enumerate(assignments):
-        overdue = (
-            '<span class="dash-mono inline-flex items-center rounded-full bg-[#CC0000] px-2.5 py-0.5 text-[10px] uppercase tracking-[0.16em] text-white">Overdue</span>'
-            if a.get('overdue') else
-            '<span class="dash-mono text-[11px] uppercase tracking-[0.16em] text-neutral-500">On time</span>'
-        )
+        overdue = ' Overdue' if a.get('overdue') else ' On time'
         course = a.get('course', 'N/A')
         due = a.get('due_date', 'N/A')
         title = a.get('title', 'Untitled')
         rows += f"""
-        <tr class="{"bg-neutral-900/40" if a.get('overdue') else ""}">
-            <td class="px-6 py-3.5 text-sm font-medium text-white">{title}</td>
-            <td class="px-6 py-3.5 text-sm text-neutral-400">{course}</td>
-            <td class="dash-mono px-6 py-3.5 text-xs text-neutral-400">{due}</td>
-            <td class="px-6 py-3.5 text-sm">{overdue}</td>
+        <tr class="{"bg-red-50" if a.get('overdue') else ""}">
+            <td class="px-3 py-2 text-sm font-medium">{title}</td>
+            <td class="px-3 py-2 text-sm text-gray-600">{course}</td>
+            <td class="px-3 py-2 text-sm text-gray-600">{due}</td>
+            <td class="px-3 py-2 text-sm">{overdue}</td>
         </tr>"""
 
     return f"""
-    <div class="dash-reveal overflow-hidden rounded-3xl border border-neutral-800 bg-neutral-950">
-        <div class="flex items-center justify-between gap-4 border-b border-neutral-800 px-6 py-4">
-            <p class="dash-mono text-[11px] uppercase tracking-[0.2em] text-neutral-500">{len(assignments)} assignments parsed</p>
-            <p class="dash-mono text-[11px] uppercase tracking-[0.2em] text-neutral-600">Sample data</p>
-        </div>
-        <div class="overflow-x-auto">
-            <table class="w-full border-collapse text-left">
-                <thead>
-                    <tr class="border-b border-neutral-800">
-                        <th class="dash-mono px-6 py-3 text-[11px] font-normal uppercase tracking-[0.2em] text-neutral-500">Title</th>
-                        <th class="dash-mono px-6 py-3 text-[11px] font-normal uppercase tracking-[0.2em] text-neutral-500">Course</th>
-                        <th class="dash-mono px-6 py-3 text-[11px] font-normal uppercase tracking-[0.2em] text-neutral-500">Due</th>
-                        <th class="dash-mono px-6 py-3 text-[11px] font-normal uppercase tracking-[0.2em] text-neutral-500">Status</th>
-                    </tr>
-                </thead>
-                <tbody class="divide-y divide-neutral-800">
-                    {rows}
-                </tbody>
-            </table>
-        </div>
+    <div class="text-sm">
+        <p class="font-semibold mb-2"> Parsed {len(assignments)} assignments</p>
+        <table class="w-full border-collapse">
+            <thead>
+                <tr class="bg-gray-100 text-left">
+                    <th class="px-3 py-2 text-xs font-semibold text-gray-600">Title</th>
+                    <th class="px-3 py-2 text-xs font-semibold text-gray-600">Course</th>
+                    <th class="px-3 py-2 text-xs font-semibold text-gray-600">Due</th>
+                    <th class="px-3 py-2 text-xs font-semibold text-gray-600">Status</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-200">
+                {rows}
+            </tbody>
+        </table>
     </div>
     """
 
@@ -121,109 +241,84 @@ async def grab_moodle():
     Open a new tab, navigate to Moodle, wait for load, then grab the HTML
     via pyautogui keyboard shortcuts.
     """
-    from services.moodle_browser import grab_moodle_page as _grab
+    from services.moodle_browser import open_dashboard_and_grab as _grab
     try:
         html = _grab(url="https://moodle-courses2527.wolfware.ncsu.edu/my/")
 
         if not html or len(html) < 100:
             return '''
-            <div class="rounded-2xl border border-neutral-700 bg-neutral-900 p-4 text-sm text-neutral-300">
-                <p class="dash-mono text-[11px] uppercase tracking-[0.2em] text-neutral-400">Not enough content</p>
-                <p class="mt-2 leading-relaxed">
-                    The page may not have finished loading, or you may need to
-                    sign in to Moodle first. Try again.
+            <div class="p-4 bg-yellow-50 border border-yellow-200 rounded-lg text-sm">
+                <p class="font-semibold text-yellow-800"> Didn't get much content</p>
+                <p class="text-yellow-700 mt-1">
+                    The page might not have loaded in time, or you need to
+                    log into Moodle first. Try again.
                 </p>
             </div>'''
 
         # Parse the grabbed HTML
         assignments = parse_dashboard(html)
 
+        #  Enrich each assignment: visit the individual assignment page
+        #    via PyAutoGUI and grab the full description text for AI context.
+        #    This data is hidden from the user but sent to Gemini.
+        if assignments:
+            try:
+                assignments = grab_assignment_descriptions(assignments, load_wait=2)
+                assignments = enrich_assignments_with_descriptions(assignments)
+                _print_descriptions(assignments)
+                _save_cache(assignments)
+            except Exception as e:
+                print(f"    Assignment description enrichment failed: {e}")
+
         if not assignments:
             return '''
-            <div class="rounded-2xl border border-neutral-700 bg-neutral-900 p-4 text-sm text-neutral-300">
-                <p class="dash-mono text-[11px] uppercase tracking-[0.2em] text-neutral-400">No assignments found</p>
-                <p class="mt-2 leading-relaxed">
-                    Grabbed {} characters but found no assignments.
-                    Open the Moodle <span class="text-white">Dashboard</span> with the <span class="text-white">Timeline</span> block visible and try again.
+            <div class="p-4 bg-yellow-50 border border-yellow-200 rounded-lg text-sm">
+                <p class="font-semibold text-yellow-800"> Page grabbed but no assignments found</p>
+                <p class="text-yellow-700 mt-1">
+                    Got {} chars of page content but couldn't find any assignments.
+                    Make sure you're on the <strong>Moodle Dashboard → Timeline</strong> view.
                 </p>
             </div>'''.format(len(html))
 
-        # Render assignment cards
-        sorted_assignments = sorted(
-            assignments,
-            key=lambda a: (0 if a.get("overdue") else 1, _parse_date(a.get("due_date", ""))),
-        )
+        # Render assignment cards (shared helper)
+        cards_html = _render_cards(assignments)
 
-        cards_html = ""
-        for i, a in enumerate(sorted_assignments):
-            overdue_badge = (
-                '<span class="dash-mono inline-flex shrink-0 items-center rounded-full bg-[#CC0000] px-2.5 py-0.5 text-[10px] uppercase tracking-[0.16em] text-white">Overdue</span>'
-                if a.get("overdue") else ""
-            )
-            due = _fmt_date(a.get("due_date", ""))
-            course = a.get("course", "") or "Unknown course"
-            title = a.get("title", "Untitled")
-            url = a.get("url", "")
-
-            cards_html += f'''
-            <div class="assignment-card rounded-3xl border border-neutral-800 bg-neutral-950 p-6"
-                 x-data="{{ open: false }}" id="assignment-{i}">
-
-                <div class="flex items-start justify-between gap-4">
-                    <div class="min-w-0 flex-1">
-                        <h3 class="truncate text-lg font-semibold tracking-tight text-white">{title}</h3>
-                        <p class="dash-mono mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-neutral-500">
-                            <span>{course}</span>
-                            <span class="text-neutral-700">&middot;</span>
-                            <span>{due}</span>
-                        </p>
-                    </div>
-                    {overdue_badge}
-                </div>
-
-                <div class="mt-5 flex flex-wrap items-center gap-2">
-                    <button hx-post="/dashboard/study-points" hx-target="#assignment-{i} .results-area"
-                            hx-vals='{{ "assignment": "{title}", "course": "{course}", "due_date": "{_fmt_date(a.get('due_date', ''))}" }}'
-                            class="rounded-full border border-neutral-800 px-4 py-2 text-sm text-neutral-300 transition hover:border-neutral-600 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#CC0000]/50">
-                        Study points
-                    </button>
-                    <button hx-post="/dashboard/quiz" hx-target="#assignment-{i} .results-area"
-                            hx-vals='{{ "assignment": "{title}", "course": "{course}", "due_date": "{_fmt_date(a.get('due_date', ''))}" }}'
-                            class="rounded-full border border-neutral-800 px-4 py-2 text-sm text-neutral-300 transition hover:border-neutral-600 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#CC0000]/50">
-                        Practice quiz
-                    </button>
-                </div>
-
-                <div class="results-area mt-4 empty:hidden"></div>
-            </div>
-            '''
-
-        return f'''
-        <div class="dash-reveal space-y-4">
-            <div class="flex items-end justify-between gap-4 px-1">
-                <div>
-                    <p class="dash-mono text-[11px] uppercase tracking-[0.2em] text-neutral-500">Timeline</p>
-                    <h2 class="mt-1 text-2xl font-semibold tracking-tight text-white">
-                        {len(assignments)} assignment{'s' if len(assignments) != 1 else ''}
-                    </h2>
-                </div>
-                <span class="dash-mono inline-flex items-center gap-2 text-[11px] uppercase tracking-[0.2em] text-neutral-500">
-                    <span class="h-1.5 w-1.5 rounded-full bg-[#CC0000]"></span>
-                    Grabbed from browser
-                </span>
+        return f"""
+        <div class="space-y-4">
+            <div class="flex items-center justify-between">
+                <h2 class="text-lg font-bold text-gray-900">
+                     Found {len(assignments)} assignment{'s' if len(assignments) != 1 else ''}
+                </h2>
+                <span class="text-xs text-gray-400">Grabbed from your browser</span>
             </div>
             {cards_html}
         </div>
-        '''
+        {_CONSOLE_DUMP}
+        """
 
     except Exception as e:
         return f'''
-        <div class="rounded-2xl border border-[#CC0000]/50 bg-[#CC0000]/10 p-4 text-sm text-neutral-100">
-            <p class="dash-mono text-[11px] uppercase tracking-[0.2em] text-white">Grab failed</p>
-            <p class="mt-2 leading-relaxed">{e}</p>
-            <p class="mt-2 text-xs text-neutral-400">Keep the browser window focused while the grab runs.</p>
+        <div class="p-4 bg-red-50 border border-red-200 rounded-lg text-sm">
+            <p class="font-semibold text-red-800"> Grab failed</p>
+            <p class="text-red-700 mt-1">{e}</p>
+            <p class="text-red-600 text-xs mt-2">Make sure no other app is stealing focus during the grab.</p>
         </div>
         '''
+
+
+
+# ── Clear cached data ────────────────────────────────────────────────
+
+@router.post("/clear", response_class=HTMLResponse)
+async def clear_cache():
+    """Delete the cache file and clear results from the dashboard."""
+    if _CACHE_FILE.exists():
+        _CACHE_FILE.unlink()
+        print("    Cache cleared")
+    return """<div class="p-4 bg-gray-50 border border-gray-200 rounded-lg text-sm text-center">
+        <p class="font-semibold text-gray-700"> Cache cleared</p>
+        <p class="text-gray-500 mt-1">Grab your assignments again to start fresh.</p>
+    </div>"""
 
 
 # ── Raw scrape — for testing without Gemini ─────────────────────────
@@ -243,42 +338,37 @@ async def scrape_only(dashboard_html: str = Form(...)):
     assignments = parse_dashboard(dashboard_html)
 
     if not assignments:
-        return "<div class='rounded-2xl border border-neutral-700 bg-neutral-900 p-4 text-sm text-neutral-300'>No assignments found. Try the Timeline view or copy more of the page.</div>"
+        return "<p class='p-4 text-yellow-700 bg-yellow-50 rounded'>No assignments found. Try a different view or copy more of the page.</p>"
 
     rows = ""
     for a in assignments:
-        overdue_badge = '<span class="dash-mono ml-2 inline-flex items-center rounded-full bg-[#CC0000] px-2.5 py-0.5 align-middle text-[10px] uppercase tracking-[0.16em] text-white">Overdue</span>' if a.get('overdue') else ''
+        overdue_badge = '' if a.get('overdue') else ''
         rows += f"""
-        <tr class="{"bg-neutral-900/40" if a.get('overdue') else ""}">
-            <td class="px-6 py-3.5 text-sm font-medium text-white">{f'<a href="{a.get("url", "")}" target="_blank" class="text-white underline-offset-4 transition hover:underline">{a.get("title", "")}</a>' if a.get('url') else a.get('title', '')} {overdue_badge}</td>
-            <td class="px-6 py-3.5 text-sm text-neutral-400">{a.get('course', '')}</td>
-            <td class="dash-mono px-6 py-3.5 text-xs text-neutral-400">{a.get('due_date', '')}</td>
-            <td class="px-6 py-3.5 text-sm">
-                <a href="{a.get('url', '#')}" target="_blank" class="inline-flex items-center gap-1 text-sm text-neutral-300 underline-offset-4 transition hover:text-white hover:underline">Open {_ICON_ARROW}</a>
+        <tr class="{"bg-red-50/50" if a.get('overdue') else ""}">
+            <td class="px-3 py-2 text-sm font-medium">{f'<a href="{a.get("url", "")}" target="_blank" class="hover:text-brand-600 transition">{a.get("title", "")}</a>' if a.get('url') else a.get('title', '')} {overdue_badge}</td>
+            <td class="px-3 py-2 text-sm text-gray-600">{a.get('course', '')}</td>
+            <td class="px-3 py-2 text-sm text-gray-600">{a.get('due_date', '')}</td>
+            <td class="px-3 py-2 text-sm">
+                <a href="{a.get('url', '#')}" target="_blank" class="text-brand-600 hover:underline text-xs">Open ↗</a>
             </td>
         </tr>"""
 
     return f"""
-    <div class="dash-reveal overflow-hidden rounded-3xl border border-neutral-800 bg-neutral-950">
-        <div class="flex items-center justify-between gap-4 border-b border-neutral-800 px-6 py-4">
-            <p class="dash-mono text-[11px] uppercase tracking-[0.2em] text-neutral-500">{len(assignments)} assignment{'s' if len(assignments) != 1 else ''} parsed</p>
-            <p class="dash-mono text-[11px] uppercase tracking-[0.2em] text-neutral-600">Scrape only</p>
-        </div>
-        <div class="overflow-x-auto">
-            <table class="w-full border-collapse text-left">
-                <thead>
-                    <tr class="border-b border-neutral-800">
-                        <th class="dash-mono px-6 py-3 text-[11px] font-normal uppercase tracking-[0.2em] text-neutral-500">Assignment</th>
-                        <th class="dash-mono px-6 py-3 text-[11px] font-normal uppercase tracking-[0.2em] text-neutral-500">Course</th>
-                        <th class="dash-mono px-6 py-3 text-[11px] font-normal uppercase tracking-[0.2em] text-neutral-500">Due</th>
-                        <th class="dash-mono px-6 py-3 text-[11px] font-normal uppercase tracking-[0.2em] text-neutral-500">Link</th>
-                    </tr>
-                </thead>
-                <tbody class="divide-y divide-neutral-800">
-                    {rows}
-                </tbody>
-            </table>
-        </div>
+    <div class="p-4 bg-gray-50 rounded-lg border text-sm">
+        <p class="font-semibold mb-2"> {len(assignments)} assignment{'s' if len(assignments) != 1 else ''} parsed</p>
+        <table class="w-full border-collapse">
+            <thead>
+                <tr class="bg-gray-100 text-left">
+                    <th class="px-3 py-1.5 text-xs font-semibold text-gray-500 uppercase">Assignment</th>
+                    <th class="px-3 py-1.5 text-xs font-semibold text-gray-500 uppercase">Course</th>
+                    <th class="px-3 py-1.5 text-xs font-semibold text-gray-500 uppercase">Due</th>
+                    <th class="px-3 py-1.5 text-xs font-semibold text-gray-500 uppercase">Link</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-200">
+                {rows}
+            </tbody>
+        </table>
     </div>
     """
 
@@ -292,101 +382,30 @@ async def inspect_dashboard(dashboard_html: str = Form(...)):
 
     if not assignments:
         return """
-        <div class="dash-reveal rounded-3xl border border-neutral-800 bg-neutral-950 p-7">
-            <p class="dash-mono text-[11px] uppercase tracking-[0.2em] text-neutral-500">No results</p>
-            <h3 class="mt-2 text-xl font-semibold tracking-tight text-white">No assignments found</h3>
-            <p class="mt-2 max-w-prose text-sm leading-relaxed text-neutral-400">
-                Nothing in that HTML looked like an assignment.
-                Copy it from the Moodle <span class="text-neutral-200">Dashboard</span> with the <span class="text-neutral-200">Timeline</span> block visible.
+        <div class="p-6 bg-yellow-50 border border-yellow-200 rounded-xl text-center">
+            <p class="text-yellow-800 font-medium text-lg"> No assignments found</p>
+            <p class="text-yellow-700 text-sm mt-1">
+                Couldn't parse any assignments from that HTML.
+                Make sure you're copying from the <strong>Moodle Dashboard → Timeline</strong> view.
             </p>
-            <details class="dash-details mt-6 rounded-2xl bg-neutral-900/60 p-5 text-sm text-neutral-300">
-                <summary class="dash-mono flex cursor-pointer list-none items-center justify-between gap-4 text-[11px] uppercase tracking-[0.2em] text-neutral-400 transition hover:text-white [&::-webkit-details-marker]:hidden">
-                    How to copy the page
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="dash-chevron h-4 w-4 shrink-0" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
-                </summary>
-                <ol class="mt-5 space-y-3">
-                    <li class="flex gap-3"><span class="dash-mono w-5 shrink-0 text-xs text-neutral-600">01</span><span>Sign in to <span class="text-white">WolfWare</span> and open your Dashboard.</span></li>
-                    <li class="flex gap-3"><span class="dash-mono w-5 shrink-0 text-xs text-neutral-600">02</span><span>Open DevTools with <kbd class="dash-mono rounded-md border border-neutral-700 bg-neutral-900 px-1.5 py-0.5 text-[11px] text-neutral-200">F12</kbd> and go to the Elements tab.</span></li>
-                    <li class="flex gap-3"><span class="dash-mono w-5 shrink-0 text-xs text-neutral-600">03</span><span>Right-click <code class="dash-mono rounded-md bg-neutral-900 px-1.5 py-0.5 text-[12px] text-neutral-200">&lt;body&gt;</code>, then choose Copy, Copy outerHTML.</span></li>
-                    <li class="flex gap-3"><span class="dash-mono w-5 shrink-0 text-xs text-neutral-600">04</span><span>Make sure the <span class="text-white">Timeline</span> block is visible before you copy.</span></li>
-                </ol>
+            <details class="mt-3 text-left text-sm text-yellow-700">
+                <summary class="cursor-pointer font-medium">Tips</summary>
+                <ul class="list-disc list-inside mt-2 space-y-1">
+                    <li>Log into <strong>WolfWare</strong> and go to your Dashboard</li>
+                    <li>Open DevTools (<kbd>F12</kbd>) → <code>Elements</code> tab</li>
+                    <li>Right-click <code>&lt;body&gt;</code> → <strong>Copy → Copy OuterHTML</strong></li>
+                    <li>Make sure the <strong>Timeline</strong> block is visible</li>
+                </ul>
             </details>
         </div>
         """
 
-    # Sort: overdue first, then by parsed date
-    sorted_assignments = sorted(
-        assignments,
-        key=lambda a: (0 if a.get("overdue") else 1, _parse_date(a.get("due_date", ""))),
-    )
-
-    cards_html = ""
-    for i, a in enumerate(sorted_assignments):
-        overdue_badge = (
-            '<span class="dash-mono inline-flex shrink-0 items-center rounded-full bg-[#CC0000] px-2.5 py-0.5 text-[10px] uppercase tracking-[0.16em] text-white">Overdue</span>'
-            if a.get("overdue") else ""
-        )
-        due = _fmt_date(a.get("due_date", ""))
-        course = a.get("course", "") or "Unknown course"
-        title = a.get("title", "Untitled")
-        url = a.get("url", "")
-        grab_btn = f"""<button hx-post="/dashboard/grab-instructions" hx-target="#assignment-{i} .results-area"
-                        hx-vals='{{"url": "{_escape_json(url)}", "title": "{_escape_json(title)}"}}'
-                        hx-indicator="#spinner-{i}"
-                        class="rounded-full border border-neutral-800 px-4 py-2 text-sm text-neutral-300 transition hover:border-neutral-600 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#CC0000]/50">
-                    Grab instructions
-                </button>""" if url else ""
-
-        cards_html += f"""
-        <div class="assignment-card rounded-3xl border border-neutral-800 bg-neutral-950 p-6"
-             x-data="{{ open: false }}" id="assignment-{i}">
-
-            <div class="flex items-start justify-between gap-4">
-                <div class="min-w-0 flex-1">
-                    <h3 class="truncate text-lg font-semibold tracking-tight text-white">{f'<a href="{url}" target="_blank" class="underline-offset-4 transition hover:underline">{title}</a>' if url else title}</h3>
-                    <p class="dash-mono mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-neutral-500">
-                        <span>{course}</span>
-                        <span class="text-neutral-700">&middot;</span>
-                        <span>{due}</span>
-                    </p>
-                </div>
-                {overdue_badge}
-            </div>
-
-            <div class="mt-5 flex flex-wrap items-center gap-2">
-                <button hx-post="/dashboard/study-points" hx-target="#assignment-{i} .results-area"
-                        hx-vals='{{"assignment": "{_escape_json(title)}", "course": "{_escape_json(course)}", "due_date": "{_escape_json(due)}", "description": "{_escape_json(a.get('description', ''))}"}}'
-                        hx-indicator="#spinner-{i}"
-                        class="rounded-full border border-neutral-800 px-4 py-2 text-sm text-neutral-300 transition hover:border-neutral-600 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#CC0000]/50">
-                    Study points
-                </button>
-                <button hx-post="/dashboard/quiz" hx-target="#assignment-{i} .results-area"
-                        hx-vals='{{"assignment": "{_escape_json(title)}", "course": "{_escape_json(course)}", "due_date": "{_escape_json(due)}", "description": "{_escape_json(a.get('description', ''))}"}}'
-                        hx-indicator="#spinner-{i}"
-                        class="rounded-full border border-neutral-800 px-4 py-2 text-sm text-neutral-300 transition hover:border-neutral-600 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#CC0000]/50">
-                    Practice quiz
-                </button>
-                {grab_btn}
-                <div id="spinner-{i}" class="htmx-indicator ml-1">
-                    <div class="h-4 w-4 animate-spin rounded-full border-2 border-neutral-800 border-t-[#CC0000]"></div>
-                </div>
-            </div>
-
-            <div class="results-area mt-4 empty:hidden"></div>
-        </div>
-        """
+    # Render assignment cards (shared helper)
+    cards_html = _render_cards(assignments)
+    _save_cache(assignments)
 
     return f"""
-    <div class="dash-reveal space-y-4">
-        <div class="flex items-end justify-between gap-4 px-1">
-            <div>
-                <p class="dash-mono text-[11px] uppercase tracking-[0.2em] text-neutral-500">Timeline</p>
-                <h2 class="mt-1 text-2xl font-semibold tracking-tight text-white">
-                    {len(assignments)} assignment{'s' if len(assignments) != 1 else ''}
-                </h2>
-            </div>
-            <p class="dash-mono text-[11px] uppercase tracking-[0.2em] text-neutral-500">Overdue first</p>
-        </div>
+    <div class="space-y-4">
         {cards_html}
     </div>
     """
@@ -460,11 +479,11 @@ async def grab_instructions(
 
         if not html or len(html) < 100:
             return f'''
-            <div class="rounded-2xl border border-neutral-700 bg-neutral-900 p-4 text-sm text-neutral-300">
-                <p class="dash-mono text-[11px] uppercase tracking-[0.2em] text-neutral-400">Not enough content</p>
-                <p class="mt-2 leading-relaxed">
-                    The assignment page may not have finished loading.
-                    Keep the browser window focused and try again.
+            <div class="p-4 bg-yellow-50 border border-yellow-200 rounded-lg text-sm mt-3">
+                <p class="font-semibold text-yellow-800"> Didn't get much content</p>
+                <p class="text-yellow-700 mt-1">
+                    The assignment page might not have loaded in time.
+                    Try again and make sure your browser is focused.
                 </p>
             </div>
             '''
@@ -476,12 +495,12 @@ async def grab_instructions(
 
         if not instructions and not doc_links:
             return f'''
-            <div class="rounded-2xl border border-neutral-700 bg-neutral-900 p-4 text-sm text-neutral-300">
-                <p class="dash-mono text-[11px] uppercase tracking-[0.2em] text-neutral-400">No instructions found</p>
-                <p class="mt-2 leading-relaxed">
-                    Grabbed {len(html)} characters but could not find the assignment instructions.
+            <div class="p-4 bg-yellow-50 border border-yellow-200 rounded-lg text-sm mt-3">
+                <p class="font-semibold text-yellow-800"> Page grabbed but no instructions found</p>
+                <p class="text-yellow-700 mt-1">
+                    Grabbed {len(html)} characters but couldn't extract specific instructions.
+                    <a href="{_escape_json(url)}" target="_blank" class="text-brand-600 hover:underline">Open manually ↗</a>
                 </p>
-                <a href="{_escape_json(url)}" target="_blank" class="mt-3 inline-flex items-center gap-1 text-sm text-neutral-500 transition hover:text-white">Open assignment {_ICON_ARROW}</a>
             </div>
             '''
 
@@ -491,26 +510,26 @@ async def grab_instructions(
         # Google Doc links
         if doc_links:
             doc_items = "".join(
-                f'<li><a href="{d["url"]}" target="_blank" class="inline-flex items-center gap-2 text-neutral-300 underline-offset-4 transition hover:text-white hover:underline">{_ICON_FILE}{_escape_html(d["text"])}</a></li>'
+                f'<li><a href="{d["url"]}" target="_blank" class="text-brand-600 hover:underline"> {_escape_html(d["text"])}</a></li>'
                 for d in doc_links
             )
             parts.append(f'''
-                <div>
-                    <p class="dash-mono text-[11px] uppercase tracking-[0.2em] text-neutral-500">Reference documents</p>
-                    <ul class="mt-2 space-y-1.5 text-sm">{doc_items}</ul>
+                <div class="mb-3">
+                    <p class="font-semibold text-sm text-gray-800 mb-1"> Reference Documents</p>
+                    <ul class="list-disc list-inside space-y-0.5 text-sm">{doc_items}</ul>
                 </div>
             ''')
 
         # Other links
         if other_links:
             other_items = "".join(
-                f'<li><a href="{l["url"]}" target="_blank" class="inline-flex items-center gap-2 text-neutral-300 underline-offset-4 transition hover:text-white hover:underline">{_ICON_LINK}{_escape_html(l["text"])}</a></li>'
+                f'<li><a href="{l["url"]}" target="_blank" class="text-brand-600 hover:underline"> {_escape_html(l["text"])}</a></li>'
                 for l in other_links
             )
             parts.append(f'''
-                <div>
-                    <p class="dash-mono text-[11px] uppercase tracking-[0.2em] text-neutral-500">Other links</p>
-                    <ul class="mt-2 space-y-1.5 text-sm">{other_items}</ul>
+                <div class="mb-3">
+                    <p class="font-semibold text-sm text-gray-800 mb-1"> Other Links</p>
+                    <ul class="list-disc list-inside space-y-0.5 text-sm">{other_items}</ul>
                 </div>
             ''')
 
@@ -522,39 +541,36 @@ async def grab_instructions(
                 display_text += "..."
             parts.append(f'''
                 <div>
-                    <p class="dash-mono text-[11px] uppercase tracking-[0.2em] text-neutral-500">Instructions</p>
-                    <div class="mt-2 max-h-60 overflow-y-auto whitespace-pre-wrap rounded-xl border border-neutral-800 bg-neutral-950 p-4 text-sm leading-relaxed text-neutral-300">{_escape_html(display_text)}</div>
+                    <p class="font-semibold text-sm text-gray-800 mb-1"> Instructions</p>
+                    <div class="text-sm text-gray-700 whitespace-pre-wrap max-h-60 overflow-y-auto bg-gray-50 rounded p-3">{_escape_html(display_text)}</div>
                 </div>
             ''')
 
         content = "\n".join(parts)
 
         return f'''
-        <div class="dash-reveal rounded-2xl border border-neutral-800 bg-neutral-900/60 p-5 text-sm text-neutral-200">
-            <div class="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-                <p class="dash-mono inline-flex items-center gap-2 text-[11px] uppercase tracking-[0.2em] text-neutral-400">
-                    <span class="h-1.5 w-1.5 rounded-full bg-[#CC0000]"></span>
-                    Instructions grabbed
-                </p>
-                <p class="min-w-0 truncate text-xs text-neutral-500">{_escape_html(title)}</p>
-            </div>
-            <div class="mt-4 space-y-5">
-                {content}
-            </div>
-            <div class="mt-5 flex flex-wrap items-center justify-between gap-2 border-t border-neutral-800 pt-4">
-                <p class="dash-mono text-[11px] text-neutral-500">{len(html)} characters from the assignment page</p>
-                <a href="{_escape_json(url)}" target="_blank" class="inline-flex items-center gap-1 text-sm text-neutral-500 transition hover:text-white">Open in tab {_ICON_ARROW}</a>
-            </div>
+        <div class="p-4 bg-blue-50 border border-blue-200 rounded-lg text-sm mt-3">
+            <p class="font-semibold text-blue-800 mb-2 flex items-center gap-2">
+                 Instructions Grabbed
+                <span class="text-xs font-normal text-blue-600">for {_escape_html(title)}</span>
+            </p>
+            {content}
+            <p class="text-xs text-blue-500 mt-2">
+                Grabbed {len(html)} chars from assignment page.
+                <a href="{_escape_json(url)}" target="_blank" class="hover:underline">Open in tab ↗</a>
+            </p>
         </div>
         '''
 
     except Exception as e:
         return f'''
-        <div class="rounded-2xl border border-[#CC0000]/50 bg-[#CC0000]/10 p-4 text-sm text-neutral-100">
-            <p class="dash-mono text-[11px] uppercase tracking-[0.2em] text-white">Grab failed</p>
-            <p class="mt-2 leading-relaxed">{_escape_html(str(e))}</p>
-            <p class="mt-2 text-xs text-neutral-400">Keep the browser window focused while the grab runs.</p>
-            <a href="{_escape_json(url)}" target="_blank" class="mt-3 inline-flex items-center gap-1 text-sm text-neutral-400 transition hover:text-white">Open assignment {_ICON_ARROW}</a>
+        <div class="p-4 bg-red-50 border border-red-200 rounded-lg text-sm mt-3">
+            <p class="font-semibold text-red-800"> Grab failed</p>
+            <p class="text-red-700 mt-1">{_escape_html(str(e))}</p>
+            <p class="text-red-600 text-xs mt-2">
+                Make sure no other app is stealing focus during the grab.
+                <a href="{_escape_json(url)}" target="_blank" class="hover:underline">Open manually ↗</a>
+            </p>
         </div>
         '''
 
@@ -596,12 +612,9 @@ async def study_points(
     )
 
     return f"""
-    <div class="dash-reveal rounded-2xl border border-neutral-800 bg-neutral-900/60 p-5 text-sm text-neutral-300">
-        <p class="dash-mono inline-flex items-center gap-2 text-[11px] uppercase tracking-[0.2em] text-neutral-400">
-            <span class="h-1.5 w-1.5 rounded-full bg-[#CC0000]"></span>
-            Study points
-        </p>
-        <div class="mt-3 max-w-none leading-relaxed text-neutral-300">
+    <div class="p-4 bg-brand-50 border border-brand-200 rounded-lg text-sm mt-3">
+        <p class="font-semibold text-brand-800 mb-2"> Study Points</p>
+        <div class="text-gray-700 prose prose-sm max-w-none">
             {_render_markdown(result)}
         </div>
     </div>
@@ -617,7 +630,7 @@ async def generate_quiz(
     due_date: str = Form(""),
     description: str = Form(""),
 ):
-    """Generate a practice quiz for a specific assignment via Gemini."""
+    """Generate a multiple-choice practice quiz for a specific assignment."""
     context_parts = [f"Assignment: {assignment}"]
     if course:
         context_parts.append(f"Course: {course}")
@@ -629,49 +642,63 @@ async def generate_quiz(
     context = "\n".join(context_parts)
 
     prompt = (
-        f"Create a short practice quiz for the assignment: '{assignment}'.\n"
-        f"Include 3-5 questions covering the key concepts.\n"
-        f"For each question:\n"
-        f"- Q: the question\n"
-        f"- A: the correct answer\n"
-        f"- E: a brief explanation of why it's correct\n\n"
-        f"Use this format:\n"
+        f"Create a multiple-choice practice quiz for the assignment: '{assignment}'.\n"
+        f"Include exactly 3 questions covering the key concepts.\n"
+        f"Each question must have exactly 4 options (A, B, C, D).\n"
+        f"Use this EXACT format for each question:\n"
         f"### Question 1\n"
-        f"**Q:** ...\n"
-        f"**A:** ...\n"
-        f"**E:** ..."
+        f"Q: [the question text]\n"
+        f"A) [option A]\n"
+        f"B) [option B]\n"
+        f"C) [option C]\n"
+        f"D) [option D]\n"
+        f"ANSWER: [correct letter]\n"
+        f"EXPLANATION: [brief explanation of why this is correct]\n"
     )
 
     result = await ask_gemini_structured(
         prompt=prompt,
         context=context,
         system_prompt=(
-            "You are a tutor creating practice quizzes. "
+            "You are a tutor creating multiple-choice practice quizzes. "
             "Make questions that test understanding, not just recall. "
-            "Always include explanations for the correct answers."
+            "Provide thorough explanations that teach the concept. "
+            "IMPORTANT: Do NOT use LaTeX or math notation ($...$). "
+            "Write chemical formulas and math expressions in plain text "
+            "(e.g., 'NCO^-' instead of '$\\\\text{NCO}^-$')."
         ),
     )
 
-    return f"""
-    <div class="dash-reveal rounded-2xl border border-neutral-800 bg-neutral-900/60 p-5 text-sm text-neutral-300">
-        <p class="dash-mono inline-flex items-center gap-2 text-[11px] uppercase tracking-[0.2em] text-neutral-400">
-            <span class="h-1.5 w-1.5 rounded-full bg-[#CC0000]"></span>
-            Practice quiz
-        </p>
-        <div class="quiz-content mt-3 max-w-none leading-relaxed text-neutral-300">
-            {_render_markdown(result)}
+    # Parse the response into structured questions
+    questions = parse_quiz_questions(result)
+    if not questions:
+        # Fallback: render as markdown if parsing fails
+        return f"""
+        <div class="p-4 bg-green-50 border border-green-200 rounded-lg text-sm mt-3">
+            <p class="font-semibold text-green-800 mb-2"> Practice Quiz</p>
+            <div class="text-gray-700 prose prose-sm max-w-none quiz-content">
+                {_render_markdown(result)}
+            </div>
         </div>
-    </div>
-    """
+        """
+
+    # Render as interactive multiple-choice with Alpine.js
+    return render_interactive_quiz(questions)
 
 
 # ── Helpers ────────────────────────────────────────────────────────────
 
 def _escape_json(s: str) -> str:
-    """Escape a string for embedding in an HTMX hx-vals JSON value."""
-    escaped = s.replace("\\", "\\\\").replace('"', '\\"').replace("'", "\\'")
-    escaped = escaped.replace("\n", " ").replace("\r", "")
-    return escaped
+    """Escape a string for embedding in an HTMX hx-vals JSON value.
+
+    Uses json.dumps() for proper JSON escaping (handles \\, \", \\n, \\t, etc.)
+    then strips the surrounding double quotes that json.dumps adds.
+
+    Critically: does NOT escape single quotes — hx-vals='...' uses single
+    quotes as the HTML attribute delimiter, so escaping ' would break it.
+    """
+    import json as _json
+    return _json.dumps(s, ensure_ascii=False)[1:-1]
 
 
 def _render_markdown(text: str) -> str:
@@ -692,55 +719,51 @@ def _render_markdown(text: str) -> str:
         # Headings
         if stripped.startswith("### "):
             if in_list:
-                html_lines.append(f"</{in_list}>")
+                html_lines.append("</ul>")
                 in_list = False
-            html_lines.append(f"<h4 class='mt-5 mb-2 text-sm font-semibold tracking-tight text-white first:mt-0'>{_inline_html(stripped[4:])}</h4>")
+            html_lines.append(f"<h4 class='font-semibold mt-3 mb-1'>{_inline_html(stripped[4:])}</h4>")
         elif stripped.startswith("## "):
             if in_list:
-                html_lines.append(f"</{in_list}>")
+                html_lines.append("</ul>")
                 in_list = False
-            html_lines.append(f"<h3 class='mt-5 mb-2 text-base font-semibold tracking-tight text-white first:mt-0'>{_inline_html(stripped[3:])}</h3>")
+            html_lines.append(f"<h3 class='font-bold mt-3 mb-1'>{_inline_html(stripped[3:])}</h3>")
         elif stripped.startswith("# "):
             if in_list:
-                html_lines.append(f"</{in_list}>")
+                html_lines.append("</ul>")
                 in_list = False
-            html_lines.append(f"<h2 class='mt-5 mb-2 text-lg font-semibold tracking-tight text-white first:mt-0'>{_inline_html(stripped[2:])}</h2>")
+            html_lines.append(f"<h2 class='font-bold mt-3 mb-1'>{_inline_html(stripped[2:])}</h2>")
 
         # Bullet list
         elif stripped.startswith("- ") or stripped.startswith("* "):
-            if in_list != "ul":
-                if in_list:
-                    html_lines.append(f"</{in_list}>")
-                html_lines.append("<ul class='my-3 list-disc space-y-1.5 pl-5 text-neutral-300 marker:text-neutral-600'>")
-                in_list = "ul"
-            html_lines.append(f"<li class='pl-1'>{_inline_html(stripped[2:])}</li>")
+            if not in_list:
+                html_lines.append("<ul class='list-disc list-inside space-y-1 my-2'>")
+                in_list = True
+            html_lines.append(f"<li>{_inline_html(stripped[2:])}</li>")
 
         # Numbered list
         elif stripped and stripped[0].isdigit() and ". " in stripped[:4]:
-            if in_list != "ol":
-                if in_list:
-                    html_lines.append(f"</{in_list}>")
-                html_lines.append("<ol class='my-3 list-decimal space-y-1.5 pl-5 text-neutral-300 marker:text-neutral-500'>")
-                in_list = "ol"
+            if not in_list:
+                html_lines.append("<ol class='list-decimal list-inside space-y-1 my-2'>")
+                in_list = True
             text_part = stripped.split(". ", 1)[1] if ". " in stripped else stripped
-            html_lines.append(f"<li class='pl-1'>{_inline_html(text_part)}</li>")
+            html_lines.append(f"<li>{_inline_html(text_part)}</li>")
 
         # Empty line = paragraph break
         elif not stripped:
             if in_list:
-                html_lines.append(f"</{in_list}>")
+                html_lines.append("</ul>")
                 in_list = False
             html_lines.append("")
 
         # Regular paragraph
         else:
             if in_list:
-                html_lines.append(f"</{in_list}>")
+                html_lines.append("</ul>")
                 in_list = False
-            html_lines.append(f"<p class='my-2 leading-relaxed text-neutral-300'>{_inline_html(stripped)}</p>")
+            html_lines.append(f"<p class='my-1'>{_inline_html(stripped)}</p>")
 
     if in_list:
-        html_lines.append(f"</{in_list}>")
+        html_lines.append("</ul>")
 
     return "\n".join(html_lines)
 
@@ -753,9 +776,9 @@ def _inline_html(text: str) -> str:
 
     # **bold**
     import re
-    escaped = re.sub(r"\*\*(.+?)\*\*", r"<strong class='font-semibold text-white'>\1</strong>", escaped)
+    escaped = re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", escaped)
     # `code`
-    escaped = re.sub(r"`(.+?)`", r"<code class='dash-mono rounded-md bg-neutral-900 px-1.5 py-0.5 text-[12px] text-neutral-200'>\1</code>", escaped)
+    escaped = re.sub(r"`(.+?)`", r"<code class='bg-gray-100 px-1 rounded text-xs'>\1</code>", escaped)
 
     return escaped
 
@@ -799,3 +822,143 @@ def _escape_html(text: str) -> str:
     """Escape a string for safe embedding in HTML."""
     import html as html_mod
     return html_mod.escape(text)
+
+
+# ── Render assignment cards (shared between grab, inspect, cache) ─────
+
+def _render_cards(assignments: list[dict]) -> str:
+    """Render a list of assignment dicts into HTML card snippets."""
+    sorted_assignments = sorted(
+        assignments,
+        key=lambda a: (0 if a.get("overdue") else 1, _parse_date(a.get("due_date", ""))),
+    )
+
+    cards_html = ""
+    for i, a in enumerate(sorted_assignments):
+        overdue_badge = (
+            '<span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800">Overdue</span>'
+            if a.get("overdue") else ""
+        )
+        due = _fmt_date(a.get("due_date", ""))
+        course = a.get("course", "") or "Unknown course"
+        title = a.get("title", "Untitled")
+        url = a.get("url", "")
+
+        cards_html += f'''
+        <div class="bg-white rounded-xl border p-5 hover:shadow-md transition assignment-card"
+             x-data="{{ open: false }}" id="assignment-{i}">
+
+            <div class="flex items-start justify-between gap-4">
+                <div class="min-w-0 flex-1">
+                    <div class="flex items-center gap-2 flex-wrap">
+                        <h3 class="text-base font-semibold text-gray-900 truncate">{f'<a href="{url}" target="_blank" class="hover:text-brand-600 transition">{title}</a>' if url else title}</h3>
+                        {overdue_badge}
+                    </div>
+                    <p class="text-sm text-gray-500 mt-0.5">
+                        <span class="inline-flex items-center gap-1"> {course}</span>
+                        <span class="mx-2">·</span>
+                        <span class="inline-flex items-center gap-1"> {due}</span>
+                    </p>
+                </div>
+            </div>
+
+            <div class="mt-3 flex gap-2 flex-wrap">
+                <button hx-post="/dashboard/study-points" hx-target="#assignment-{i} .results-area"
+                        hx-vals='{{"assignment": "{_escape_json(title)}", "course": "{_escape_json(course)}", "due_date": "{_escape_json(due)}", "description": "{_escape_json(a.get('description', ''))}"}}'
+                        hx-indicator="#spinner-{i}"
+                        class="px-3 py-1.5 text-xs font-medium rounded-lg bg-brand-50 text-brand-700 hover:bg-brand-100 border border-brand-200 transition">
+                     Study Points
+                </button>
+                <button hx-post="/dashboard/quiz" hx-target="#assignment-{i} .results-area"
+                        hx-vals='{{"assignment": "{_escape_json(title)}", "course": "{_escape_json(course)}", "due_date": "{_escape_json(due)}", "description": "{_escape_json(a.get('description', ''))}"}}'
+                        hx-indicator="#spinner-{i}"
+                        class="px-3 py-1.5 text-xs font-medium rounded-lg bg-green-50 text-green-700 hover:bg-green-100 border border-green-200 transition">
+                     Generate Quiz
+                </button>
+                {"""<button hx-post="/dashboard/grab-instructions" hx-target="#assignment-{i} .results-area"
+                        hx-vals='{{"url": "{_escape_json(url)}", "title": "{_escape_json(title)}"}}'
+                        hx-indicator="#spinner-{i}"
+                        class="px-3 py-1.5 text-xs font-medium rounded-lg bg-purple-50 text-purple-700 hover:bg-purple-100 border border-purple-200 transition">
+                     Grab Instructions
+                </button>""" if url else ""}
+                <div id="spinner-{i}" class="htmx-indicator">
+                    <div class="w-4 h-4 border-2 border-brand-200 border-t-brand-600 rounded-full animate-spin"></div>
+                </div>
+            </div>
+
+            <div class="results-area mt-3"></div>
+        </div>
+        '''
+
+    return cards_html
+
+
+# ── Print descriptions to server console ──────────────────────────────
+
+_CONSOLE_DUMP: str = ""  # <script> block injected into grab response
+
+
+def _print_descriptions(assignments: list[dict]) -> None:
+    """
+    Print every collected description to the server terminal so the user
+    can verify the text in the CMD window where uvicorn is running.
+    """
+    print()
+    print("=" * 72)
+    print("  ASSIGNMENT DESCRIPTION REPORT")
+    print("=" * 72)
+
+    total_chars = 0
+    grabbed_count = 0
+
+    for i, a in enumerate(assignments):
+        title = a.get("title", "?")
+        course = a.get("course", "?")
+        desc = a.get("description", "") or ""
+        char_count = len(desc)
+        total_chars += char_count
+
+        print()
+        print(f"  [{i+1}] {title}")
+        print(f"      Course: {course}  |  {char_count} chars")
+        print(f"      {'─' * 60}")
+
+        if char_count > 50:
+            grabbed_count += 1
+            # Print the FULL text, indented
+            for line in desc.split("\n"):
+                print(f"      {line}")
+        else:
+            print(f"      (no description collected)")
+
+        print(f"      {'─' * 60}")
+
+    print()
+    print(f"  Summary: {grabbed_count}/{len(assignments)} assignments have descriptions")
+    print(f"  Total:   {total_chars} chars collected for AI context")
+    print("=" * 72)
+    print()
+
+    # Also build a small inline script tag showing summary in Chrome console
+    global _CONSOLE_DUMP
+    import json as _json
+    records = [
+        {"title": a.get("title", "?"), "course": a.get("course", "?"), "char_count": len(a.get("description", "") or "")}
+        for a in assignments
+    ]
+    json_data = _json.dumps(records, indent=2, ensure_ascii=False)
+
+    _CONSOLE_DUMP = f'''
+<script>
+console.log("=" .repeat(72));
+console.log("  ASSIGNMENT DESCRIPTION REPORT  (" + new Date().toLocaleTimeString() + ")");
+console.log("=" .repeat(72));
+const _d = {json_data};
+for (let i = 0; i < _d.length; i++) {{
+    console.log(`  [${{i+1}}] ${{_d[i].title}}  --  ${{_d[i].course}}  (${{_d[i].char_count}} chars)`);
+}}
+console.log("=" .repeat(72));
+console.log("  (Full text printed in the server terminal)");
+console.log("=" .repeat(72));
+</script>
+'''

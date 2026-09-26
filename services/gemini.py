@@ -126,6 +126,78 @@ def _build_prompt(prompt: str, context: str, system_prompt: str | None) -> str:
     return "\n".join(parts)
 
 
+async def ask_gemini_with_image(
+    prompt: str,
+    image_bytes: bytes,
+    mime_type: str = "image/jpeg",
+    system_prompt: str | None = None,
+    model: str = DEFAULT_MODEL,
+) -> str:
+    """
+    Send an image + text prompt to Gemini and return the response text.
+
+    The image is passed directly as a multimodal part — Gemini reads
+    the text, diagrams, formulas, etc. natively. No OCR needed.
+    """
+    client = _get_client()
+    if not client:
+        return f"[Gemini not configured — image received ({len(image_bytes)} bytes)]"
+
+    from google.genai import types
+
+    parts = []
+    if system_prompt:
+        parts.append(f"[System]\n{system_prompt}")
+    parts.append(f"[Instruction]\n{prompt}")
+    parts.append(types.Part.from_bytes(data=image_bytes, mime_type=mime_type))
+
+    try:
+        response = await client.aio.models.generate_content(
+            model=model,
+            contents=parts,
+        )
+        return response.text or "[Gemini returned empty response]"
+    except Exception as exc:
+        return f"[Gemini error: {exc}]"
+
+
+async def ask_gemini_json_with_image(
+    prompt: str,
+    image_bytes: bytes,
+    mime_type: str = "image/jpeg",
+    system_prompt: str | None = None,
+    model: str = DEFAULT_MODEL,
+) -> str:
+    """
+    Send an image + text prompt to Gemini and get a JSON response.
+
+    Raises RuntimeError when Gemini is not configured or returns empty.
+    """
+    client = _get_client()
+    if not client:
+        raise RuntimeError("Gemini not configured — cannot parse image")
+
+    from google.genai import types
+
+    parts = []
+    if system_prompt:
+        parts.append(f"[System]\n{system_prompt}")
+    parts.append(f"[Instruction]\n{prompt}")
+    parts.append(types.Part.from_bytes(data=image_bytes, mime_type=mime_type))
+
+    try:
+        response = await client.aio.models.generate_content(
+            model=model,
+            contents=parts,
+            config={"response_mime_type": "application/json"},
+        )
+        if not response.text:
+            raise RuntimeError("Gemini returned an empty response")
+        return response.text
+    except Exception as exc:
+        raise RuntimeError(f"Gemini error: {exc}")
+
+
 def _stub_response(prompt: str, context: str) -> str:
     """Return a placeholder when no API key or SDK is configured."""
     msg = []

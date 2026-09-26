@@ -136,10 +136,22 @@
     </div>
 
     <!-- Status -->
-    <div id="status-area" class="text-sm"></div>
+    <div id="status-area" class="text-sm">
+        {% if cached_time %}
+        <div class="flex items-center justify-between gap-4 rounded-2xl border border-neutral-800 bg-neutral-900/60 p-4 text-sm text-neutral-200">
+            <span>Loaded from cache · last fetched {{ cached_time }}</span>
+            <button @click="clearCache()"
+                    class="rounded-full border border-neutral-800 px-4 py-1.5 text-xs text-neutral-300 transition hover:border-neutral-600 hover:text-white">
+                Clear
+            </button>
+        </div>
+        {% endif %}
+    </div>
 
     <!-- Results -->
-    <div id="results" class="space-y-4"></div>
+    <div id="results" class="space-y-4">
+        {{ cached_html | safe }}
+    </div>
 
     <!-- Manual paste (collapsible fallback) -->
     <details class="dash-details group rounded-3xl border border-neutral-800 bg-neutral-950 p-5">
@@ -205,11 +217,23 @@ function dashboardInspector() {
                 const resp = await fetch('/dashboard/grab', { method: 'POST' });
                 const html = await resp.text();
                 document.getElementById('results').innerHTML = html;
+                if (typeof htmx !== 'undefined') htmx.process(document.getElementById('results'));
                 document.getElementById('status-area').innerHTML = dashSuccessBox('Done. Assignments loaded below.');
             } catch (err) {
                 document.getElementById('results').innerHTML = dashErrorBox('Grab failed: ' + err.message);
             } finally {
                 this.grabbing = false;
+            }
+        },
+
+        async clearCache() {
+            try {
+                const resp = await fetch('/dashboard/clear', { method: 'POST' });
+                const html = await resp.text();
+                document.getElementById('results').innerHTML = '';
+                document.getElementById('status-area').innerHTML = html;
+            } catch (err) {
+                document.getElementById('status-area').innerHTML = dashErrorBox('Failed to clear: ' + err.message);
             }
         },
 
@@ -233,6 +257,7 @@ function dashboardInspector() {
             try {
                 const resp = await fetch('/dashboard/inspect', { method: 'POST', body: formData });
                 document.getElementById('results').innerHTML = await resp.text();
+                if (typeof htmx !== 'undefined') htmx.process(document.getElementById('results'));
             } catch (err) {
                 document.getElementById('results').innerHTML = dashErrorBox('Failed: ' + err.message);
             } finally { this.inspecting = false; }
@@ -247,6 +272,7 @@ function dashboardInspector() {
             try {
                 const resp = await fetch('/dashboard/scrape-only', { method: 'POST', body: formData });
                 document.getElementById('results').innerHTML = await resp.text();
+                if (typeof htmx !== 'undefined') htmx.process(document.getElementById('results'));
             } catch (err) {
                 document.getElementById('results').innerHTML = dashErrorBox('Failed: ' + err.message);
             } finally { this.inspecting = false; }
