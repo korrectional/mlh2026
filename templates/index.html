@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+
+{% block title %}MLH Toolkit — Home{% endblock %}
+
+{% block content %}
+<div class="text-center py-12">
+    <h1 class="text-4xl font-bold text-gray-900 mb-4">🧰 MLH Toolkit</h1>
+    <p class="text-lg text-gray-500 mb-10">Pick a tool — everything runs locally, nothing hits the cloud (except Gemini).</p>
+
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-4xl mx-auto">
+
+        <!-- Lecture Note-Taker -->
+        <a href="/lecture" class="block p-6 bg-white rounded-xl border hover:shadow-lg hover:-translate-y-0.5 transition-all group">
+            <div class="text-4xl mb-3">🎙️</div>
+            <h2 class="text-lg font-semibold text-gray-900 group-hover:text-brand-600">Live Lecture Note-Taker</h2>
+            <p class="text-sm text-gray-500 mt-2">Record a lecture. Gemini generates structured notes, flags review concepts, synced to slide timestamps.</p>
+        </a>
+
+        <!-- Study Buddy -->
+        <a href="/study-buddy" class="block p-6 bg-white rounded-xl border hover:shadow-lg hover:-translate-y-0.5 transition-all group">
+            <div class="text-4xl mb-3">📄</div>
+            <h2 class="text-lg font-semibold text-gray-900 group-hover:text-brand-600">Study Buddy from PDFs</h2>
+            <p class="text-sm text-gray-500 mt-2">Drop lecture slides or a textbook. Gemini generates practice quizzes and explains wrong answers conversationally.</p>
+        </a>
+
+        <!-- Dashboard Inspector -->
+        <a href="/dashboard" class="block p-6 bg-white rounded-xl border hover:shadow-lg hover:-translate-y-0.5 transition-all group">
+            <div class="text-4xl mb-3">📋</div>
+            <h2 class="text-lg font-semibold text-gray-900 group-hover:text-brand-600">Dashboard Inspector</h2>
+            <p class="text-sm text-gray-500 mt-2">Scan your NCSU Moodle dashboard for due-soon assignments. Get study points and optionally a practice quiz.</p>
+        </a>
+
+    </div>
+</div>
+{% endblock %}

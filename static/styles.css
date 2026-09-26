@@ -1,0 +1,37 @@
+/* Base styles and custom utilities for MLH Toolkit */
+
+html { scroll-behavior: smooth; }
+
+/* Lecture recording pulse */
+@keyframes pulse-recording {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+}
+.recording-pulse {
+    animation: pulse-recording 1.2s ease-in-out infinite;
+}
+
+/* HTMX loading states */
+.htmx-request .spinner { display: inline-block; }
+.htmx-request.spinner { display: inline-block; }
+.spinner { display: none; }
+
+/* Transitions for HTMX swaps */
+.htmx-swapping { opacity: 0; transition: opacity 0.2s; }
+
+/* Quiz option buttons */
+.quiz-option {
+    @apply block w-full text-left p-3 rounded-lg border transition;
+}
+.quiz-option:hover {
+    @apply bg-brand-50 border-brand-300;
+}
+.quiz-option.selected {
+    @apply bg-brand-100 border-brand-500;
+}
+.quiz-option.correct {
+    @apply bg-green-100 border-green-500;
+}
+.quiz-option.wrong {
+    @apply bg-red-100 border-red-500;
+}

@@ -1,0 +1,13 @@
+fastapi
+uvicorn[standard]
+python-multipart
+google-genai
+PyMuPDF
+beautifulsoup4
+pyautogui
+pynput
+opencv-python-headless
+sounddevice
+mss
+python-dotenv
+Jinja2
