@@ -22,30 +22,52 @@ The other two tools (Study Buddy, Lecture Note-Taker) are frontend shells with s
 
 | Tool | Status | What's Done | What's Missing |
 |---|---|---|---|
-| 📋 Dashboard Inspector | **✅ Mostly complete** | Scraper (6 fallback parsers), Gemini study points + quiz generation, browser automation (PyAutoGUI), instruction extraction from assignment pages, polished HTMX frontend with countdown/overlay/manual paste | No bookmarklet yet, no Moodle detail-page auto-fetching (user must copy/paste or use grab), no persistent history |
-| 📄 Study Buddy | 🟡 **Stub** | Frontend shell (drag-drop, loading spinner, quiz container), router stubs, Alpine.js state | `services/pdf_parser.py` is a stub, `routers/study_buddy.py` returns placeholder HTML, no Gemini quiz generation, no conversational explainer |
-| 🎙️ Lecture Note-Taker | 🟡 **Stub** | Frontend shell (recording button, timer, notes/flags panels), WebSocket endpoint stub | `services/audio_processor.py` is a stub, no real-time audio streaming, no Gemini multimodal integration, `routers/lecture.py` just echoes bytes back |
+| 📋 Dashboard Inspector | **✅ Complete** | Full scraper, Tab-navigation description extraction, Gemini study points + quiz generation, PyAutoGUI browser automation, polished HTMX frontend | User needs `.env` with `GEMINI_API_KEY` for AI features. No bookmarklet yet, no persistent history |
+| 📄 Study Buddy | 🟡 **Stub** | Frontend shell (drag-drop, loading spinner, quiz container), router stubs, Alpine.js state | `services/pdf_parser.py` is a stub, `routers/study_buddy.py` returns placeholder HTML, no Gemini quiz generation |
+| 🎙️ Lecture Note-Taker | 🟡 **Stub** | Frontend shell (recording button, timer, notes/flags panels), WebSocket endpoint stub | `services/audio_processor.py` is stub, no audio streaming, no Gemini multimodal integration |
 
-### Moodle Scraper Architecture
+### Dashboard Description Extraction Flow
 
-`services/moodle_scraper.py` tries **6 parsing strategies** in priority order:
+The scraper no longer uses URLs in new tabs. Instead:
 
-1. **Timeline block** (`[data-region="event-list-item"]`) — Moodle 4.x standard, covers NCSU WolfWare
-2. **Course overview cards** (`.card.dashboard-card`) — older Moodle themes
-3. **Generic tables** (`<table>` with `href*='assign'`) — catch-all
-4. **List items** (`<li>` with `<a href*='assign'>`) — catch-all
-5. **HTML text patterns** (elements containing "is due" / "closes") — robust fallback
-6. **Plain text** (no HTML tags, e.g. Ctrl+A/Ctrl+V paste) — last resort
+1. **`open_dashboard_and_grab()`** — Opens Moodle dashboard in a new tab, Ctrl+A→Ctrl+C to grab rendered text, keeps the tab open (no Ctrl+W)
+2. **`parse_dashboard()`** — Parses the dashboard text for assignment list (6 strategies)
+3. **`grab_assignment_descriptions()`** — On the same open dashboard tab:
+   ```
+   Tab 22x → focus first assignment link
+   Enter → open assignment page
+   Wait 2s → let it load
+   Ctrl+A → Ctrl+C → store rendered text in `_page_html`
+   Alt+Left → back to dashboard
+   Wait 1.5s → dashboard reloads
+   Tab 2x → focus next assignment
+   Repeat for each assignment
+   Ctrl+W → close dashboard tab when done
+   ```
+4. **`enrich_assignments_with_descriptions()`** — For each `_page_html`:
+   - Detects plain-text vs HTML (rendered text starts with "Skip to main..." not `<`)
+   - For plain-text: finds assignment content via markers (`Completion requirements`, `To do:`, `Due:`, `Opened:`) and extracts from there until `Submission status`, `Attempt number`, `Jump to...`
+   - Deduplicates consecutive lines, strips Moodle chrome
+   - Stores clean text in `description` key (overwriting dashboard placeholder)
+   - Deletes `_page_html` (never reaches frontend)
 
-Each parser extracts: `title`, `course`, `due_date`, `url`, `overdue` (bool), `description`.
+### Timing (all sleeps)
 
-### Browser Automation (PyAutoGUI)
+| Step | Sleep |
+|---|---|
+| Dashboard load wait | 2s |
+| Enter → assignment page load | 0.5s + 2s = 2.5s |
+| Alt+Left → dashboard reload | 0.3s + 1s = 1.3s |
+| Tab between assignments | 0.05s × 2 = 0.1s |
+| **Per assignment total** | **~3.9s** |
 
-`services/moodle_browser.py` opens a new browser tab, pastes a URL, waits N seconds, then Ctrl+A → Ctrl+C to copy page content, reads clipboard, closes tab. Used for:
-- `/dashboard/grab` — grab the entire Moodle dashboard
-- `/dashboard/grab-instructions` — grab an individual assignment's instructions + Google Doc links
+Tab counts: `tab_first=22`, `tab_next=2` — configurable parameters.
 
-**Known sensitivity:** Other windows stealing focus during automation will break the sequence. The 5-second load wait is generous but Moodle can be slow.
+### Plain-Text Extraction Markers
+
+`extract_assignment_detail()` uses content-section markers:
+- **Start:** `Completion requirements`, `To do:`, `Due:`, or `Opened:`
+- **End:** `Submission status`, `Attempt number`, `Jump to...`, `Grading status`, `Time remaining`, `Last modified`, or `Submission comments`
 
 ### Gemini Integration
 
@@ -54,6 +76,8 @@ Each parser extracts: `title`, `course`, `due_date`, `url`, `overdue` (bool), `d
 - `ask_gemini(prompt, context, system_prompt)` — freeform response
 - `ask_gemini_structured(prompt, context, system_prompt)` — adds markdown-structure instruction
 - Default model: `gemini-2.0-flash`
+
+**Currently blocked on:** User needs to `copy .env.example .env` and set `GEMINI_API_KEY`.
 
 ### HTMX Pattern (Dashboard Tool)
 
@@ -67,23 +91,29 @@ User clicks "Grab Instructions" → POST /dashboard/grab-instructions → PyAuto
 
 Each assignment card has a `.results-area` div that receives the swap, keeping cards independent.
 
+Cards send `description` (the scraped assignment text) as hidden form data in `hx-vals` — the user never sees it, but Gemini gets the full assignment context.
+
 ### Jinja2 Rendering
 
 Templates use a direct Jinja2 `Environment` (not Starlette's `Jinja2Templates`) for Python 3.14 compatibility with `datetime.strptime` changes. Each router that needs templates creates its own `_jinja_env` pointing to `templates/`.
 
-### Dashboard Endpoints (all currently working)
+### Dashboard Endpoints
 
 ```
 GET  /dashboard                          → Dashboard page (HTML)
 POST /dashboard/inspect                  → Paste dashboard HTML → assignment cards
-POST /dashboard/grab                     → PyAutoGUI grab → assignment cards
+POST /dashboard/grab                     → PyAutoGUI: open dashboard → parse → Tab-navigate assignments → close tab → cards + console.log dump
 POST /dashboard/scrape-only              → Paste HTML → parse only (no Gemini, debugging)
-POST /dashboard/study-points             → Gemini → study topics for one assignment
-POST /dashboard/quiz                     → Gemini → practice quiz for one assignment
-POST /dashboard/grab-instructions        → PyAutoGUI → assignment instructions + links
+POST /dashboard/study-points             → Gemini → study topics for one assignment (uses description from form data)
+POST /dashboard/quiz                     → Gemini → practice quiz for one assignment (uses description from form data)
+POST /dashboard/grab-instructions        → PyAutoGUI: one-off assignment page grab → instructions + Google Doc links
 GET  /dashboard/debug/sample             → Parse sample HTML → show results
 GET  /dashboard/debug/sample-raw         → Return raw sample HTML (for frontend testing)
 ```
+
+### Console Output
+
+Server terminal prints full description text after grab. Browser Chrome console gets a brief summary (titles + char counts).
 
 ### Stubs to Fill (when switching branches)
 

@@ -431,9 +431,52 @@ def extract_assignment_detail(html: str) -> dict:
 
     if is_plain_text:
         # ── Plain-text path ────────────────────────────────────────────
-        # Split into lines, filter out common Moodle chrome noise
         lines = stripped.split("\n")
-        filtered = []
+
+        # Step 1: find where the actual assignment content starts.
+        #    Look for "Completion requirements", "To do:", "Due:", "Opened:"
+        #    which signal the assignment info block.
+        content_start = None
+        for i, line in enumerate(lines):
+            clean = line.strip()
+            if (
+                clean.startswith("Completion requirements")
+                or clean.startswith("To do:")
+                or clean.startswith("Due:")
+                or clean.startswith("Opened:")
+            ):
+                content_start = i
+                break
+
+        # Step 2: find where the content ends.
+        #    Look for "Submission status", "Attempt number", "Jump to...",
+        #    "Grading status", "Time remaining", "Last modified"
+        content_end = None
+        if content_start is not None:
+            for i in range(content_start, len(lines)):
+                clean = lines[i].strip()
+                if (
+                    clean.startswith("Submission status")
+                    or clean.startswith("Attempt number")
+                    or clean.startswith("Jump to...")
+                    or clean.startswith("Grading status")
+                    or clean.startswith("Time remaining")
+                    or clean.startswith("Last modified")
+                    or clean.startswith("Submission comments")
+                ):
+                    content_end = i
+                    break
+
+        if content_start is not None:
+            relevant = lines[content_start:content_end] if content_end else lines[content_start:]
+        else:
+            # Fallback: take everything (less ideal)
+            relevant = lines
+
+        # Step 3: clean up — strip whitespace, remove pure separators,
+        #    collapse duplicate consecutive lines, strip common chrome.
+        cleaned = []
+        seen = set()
         noise_prefixes = [
             "Skip to main content", "NC State", "WolfWare",
             "Home", "Dashboard", "My courses",
@@ -443,14 +486,14 @@ def extract_assignment_detail(html: str) -> dict:
             "Submission comments", "CommentsComments",
             "-------------------------------",
         ]
-        for line in lines:
+        for line in relevant:
             clean = line.strip()
             if not clean:
                 continue
-            # Skip pure separator lines (dashes, equals)
+            # Pure separator lines
             if all(c in "-=_•·" for c in clean):
                 continue
-            # Skip common chrome lines
+            # Common chrome
             skip = False
             for prefix in noise_prefixes:
                 if clean.startswith(prefix):
@@ -458,10 +501,13 @@ def extract_assignment_detail(html: str) -> dict:
                     break
             if skip:
                 continue
-            filtered.append(clean)
+            # Deduplicate consecutive identical lines
+            if cleaned and clean == cleaned[-1]:
+                continue
+            cleaned.append(clean)
 
-        description = "\n".join(filtered)
-        print(f"      plain-text: {raw_len} raw → {len(description)} chars after noise filter")
+        description = "\n".join(cleaned)
+        print(f"      plain-text: {raw_len} raw → {len(description)} chars (content-section extraction)")
 
     else:
         # ── HTML path ──────────────────────────────────────────────────

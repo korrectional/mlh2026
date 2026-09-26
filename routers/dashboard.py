@@ -629,10 +629,16 @@ async def generate_quiz(
 # ── Helpers ────────────────────────────────────────────────────────────
 
 def _escape_json(s: str) -> str:
-    """Escape a string for embedding in an HTMX hx-vals JSON value."""
-    escaped = s.replace("\\", "\\\\").replace('"', '\\"').replace("'", "\\'")
-    escaped = escaped.replace("\n", " ").replace("\r", "")
-    return escaped
+    """Escape a string for embedding in an HTMX hx-vals JSON value.
+
+    Uses json.dumps() for proper JSON escaping (handles \\, \", \\n, \\t, etc.)
+    then strips the surrounding double quotes that json.dumps adds.
+
+    Critically: does NOT escape single quotes — hx-vals='...' uses single
+    quotes as the HTML attribute delimiter, so escaping ' would break it.
+    """
+    import json as _json
+    return _json.dumps(s, ensure_ascii=False)[1:-1]
 
 
 def _render_markdown(text: str) -> str:
