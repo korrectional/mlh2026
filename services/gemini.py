@@ -28,7 +28,7 @@ def _get_client():
         return None
 
 
-DEFAULT_MODEL = "gemini-2.0-flash"
+DEFAULT_MODEL = "gemini-3.8-flash"
 
 
 async def ask_gemini(
@@ -44,7 +44,7 @@ async def ask_gemini(
         prompt: The main instruction / user question.
         context: Optional background context (e.g. assignment text, notes).
         system_prompt: Optional system-level instruction.
-        model: Gemini model name (default: gemini-2.0-flash).
+        model: Gemini model name (default: DEFAULT_MODEL).
 
     Returns:
         Response text string, or an error/fallback message.
@@ -87,6 +87,31 @@ async def ask_gemini_structured(
         system_prompt=system_prompt,
         model=model,
     )
+
+
+async def ask_gemini_json(
+    prompt: str,
+    context: str = "",
+    system_prompt: str | None = None,
+    model: str = DEFAULT_MODEL,
+) -> str:
+    """
+    Like ask_gemini, but forces a raw JSON response (no markdown fences).
+    Raises RuntimeError when no key/SDK is configured, since callers need
+    parseable output rather than a stub message.
+    """
+    client = _get_client()
+    if not client:
+        raise RuntimeError(_stub_response(prompt, ""))
+
+    response = await client.aio.models.generate_content(
+        model=model,
+        contents=_build_prompt(prompt, context, system_prompt),
+        config={"response_mime_type": "application/json"},
+    )
+    if not response.text:
+        raise RuntimeError("Gemini returned an empty response")
+    return response.text
 
 
 # ── Internals ──────────────────────────────────────────────────────────

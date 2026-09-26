@@ -1,0 +1,45 @@
+<div class="space-y-5">
+    <div class="flex items-end justify-between gap-4">
+        <div>
+            <p class="text-[11px] font-medium uppercase tracking-widest text-neutral-400">Quiz from {{ filename }}</p>
+            <h2 class="text-xl font-semibold tracking-tight text-neutral-900">{{ title }}</h2>
+        </div>
+        <span id="sb-score" class="shrink-0 text-xs font-medium text-neutral-500 border border-neutral-200 rounded-full px-3 py-1">0 / {{ questions | length }} answered</span>
+    </div>
+
+    {% for q in questions %}
+    {% set i = loop.index0 %}
+    <form id="sb-q-{{ i }}"
+          hx-post="/study-buddy/answer"
+          hx-target="this"
+          hx-swap="outerHTML"
+          class="bg-white border border-neutral-200 rounded-2xl p-6 space-y-4">
+        <input type="hidden" name="quiz_id" value="{{ quiz_id }}">
+        <input type="hidden" name="q_index" value="{{ i }}">
+
+        <div class="flex items-center gap-3">
+            <span class="text-xs font-semibold text-neutral-400">Q{{ i + 1 }}</span>
+            <span class="text-[11px] uppercase tracking-wider text-neutral-500 bg-neutral-100 rounded-full px-2.5 py-0.5">{{ q.topic }}</span>
+        </div>
+        <p class="font-medium text-neutral-900 leading-relaxed">{{ q.question }}</p>
+
+        <div class="space-y-2">
+            {% for opt in q.options %}
+            <label class="flex items-start gap-3 p-3.5 rounded-xl border border-neutral-200 cursor-pointer transition hover:border-neutral-400 has-[:checked]:border-neutral-900 has-[:checked]:bg-neutral-50">
+                <input type="radio" name="choice" value="{{ loop.index0 }}" required class="mt-0.5 accent-neutral-900">
+                <span class="text-sm text-neutral-700"><span class="font-semibold text-neutral-400 mr-1">{{ "ABCD"[loop.index0] }}</span> {{ opt }}</span>
+            </label>
+            {% endfor %}
+        </div>
+
+        <div class="flex justify-end">
+            <button class="px-5 py-2.5 bg-neutral-900 text-white text-sm font-medium rounded-xl hover:bg-neutral-700 transition">
+                <span class="sb-idle">Check answer</span>
+                <span class="sb-busy">Checking...</span>
+            </button>
+        </div>
+    </form>
+    {% endfor %}
+
+    <div id="sb-summary"></div>
+</div>

@@ -1,0 +1,66 @@
+<div id="sb-q-{{ i }}" class="bg-white border rounded-2xl p-6 space-y-4 {{ 'border-neutral-900' if correct else 'border-neutral-200' }}">
+    <div class="flex items-center gap-3">
+        <span class="text-xs font-semibold text-neutral-400">Q{{ i + 1 }}</span>
+        <span class="text-[11px] uppercase tracking-wider text-neutral-500 bg-neutral-100 rounded-full px-2.5 py-0.5">{{ q.topic }}</span>
+        {% if correct %}
+        <span class="ml-auto text-xs font-medium text-white bg-neutral-900 rounded-full px-3 py-1">Correct</span>
+        {% else %}
+        <span class="ml-auto text-xs font-medium text-neutral-600 border border-neutral-300 rounded-full px-3 py-1">Incorrect</span>
+        {% endif %}
+    </div>
+    <p class="font-medium text-neutral-900 leading-relaxed">{{ q.question }}</p>
+
+    <div class="space-y-2">
+        {% for opt in q.options %}
+        {% set j = loop.index0 %}
+        {% if j == q.correct_index %}
+        <div class="flex items-start gap-3 p-3.5 rounded-xl border border-neutral-900 bg-neutral-50">
+            <svg class="mt-0.5 shrink-0" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+            <span class="text-sm font-medium text-neutral-900"><span class="font-semibold text-neutral-400 mr-1">{{ "ABCD"[j] }}</span> {{ opt }}</span>
+        </div>
+        {% elif j == choice %}
+        <div class="flex items-start gap-3 p-3.5 rounded-xl border border-neutral-300">
+            <svg class="mt-0.5 shrink-0 text-neutral-400" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            <span class="text-sm text-neutral-400 line-through"><span class="font-semibold mr-1">{{ "ABCD"[j] }}</span> {{ opt }}</span>
+        </div>
+        {% else %}
+        <div class="flex items-start gap-3 p-3.5 rounded-xl border border-neutral-100 opacity-50">
+            <span class="w-4 shrink-0"></span>
+            <span class="text-sm text-neutral-500"><span class="font-semibold mr-1">{{ "ABCD"[j] }}</span> {{ opt }}</span>
+        </div>
+        {% endif %}
+        {% endfor %}
+    </div>
+
+    {% if explanation %}
+    <div class="rounded-xl bg-neutral-50 border border-neutral-200 p-4 space-y-1.5">
+        <p class="text-[11px] font-semibold uppercase tracking-widest text-neutral-500">Let me explain</p>
+        <p class="text-sm text-neutral-700 leading-relaxed whitespace-pre-line">{{ explanation }}</p>
+    </div>
+    {% endif %}
+</div>
+
+<span id="sb-score" hx-swap-oob="true" class="shrink-0 text-xs font-medium text-neutral-500 border border-neutral-200 rounded-full px-3 py-1">{{ answered }} / {{ total }} answered · {{ num_correct }} correct</span>
+
+{% if finished %}
+<div id="sb-summary" hx-swap-oob="true" class="bg-neutral-900 text-white rounded-2xl p-8 space-y-5">
+    <div class="flex items-baseline justify-between">
+        <p class="text-[11px] font-semibold uppercase tracking-widest text-neutral-400">Results</p>
+        <p class="text-sm text-neutral-400">{{ (num_correct * 100 / total) | round | int }}%</p>
+    </div>
+    <p class="text-5xl font-semibold tracking-tight">{{ num_correct }} / {{ total }}</p>
+    {% if missed_topics %}
+    <div class="space-y-2">
+        <p class="text-sm text-neutral-400">Review these topics before the exam:</p>
+        <div class="flex flex-wrap gap-2">
+            {% for t in missed_topics %}
+            <span class="text-xs border border-neutral-700 rounded-full px-3 py-1">{{ t }}</span>
+            {% endfor %}
+        </div>
+    </div>
+    {% else %}
+    <p class="text-neutral-300">Perfect score. You know this material.</p>
+    {% endif %}
+    <a href="/study-buddy" class="inline-block px-5 py-2.5 bg-white text-neutral-900 text-sm font-medium rounded-xl hover:bg-neutral-200 transition">Try another PDF</a>
+</div>
+{% endif %}
