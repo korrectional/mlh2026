@@ -3,68 +3,115 @@
 {% block title %}Study Buddy{% endblock %}
 
 {% block content %}
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@300..700&family=Geist+Mono:wght@400..600&display=swap">
 <style>
+    /* Dark monochrome theme, scoped to this page: overrides the shared light shell without editing base.html. */
+    :root { color-scheme: dark; }
+    body.bg-gray-50 { background: #0a0a0a; color: #d4d4d4; font-family: "Geist", ui-sans-serif, system-ui, sans-serif; }
+    ::selection { background: #fafafa; color: #0a0a0a; }
+    nav.bg-white { background: rgba(10, 10, 10, 0.72); border-color: #1c1c1c; box-shadow: none; backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); }
+    nav.bg-white a { filter: grayscale(1); }
+    nav a.text-brand-600, nav a.text-brand-600:hover { color: #fafafa; }
+    nav a.text-gray-600 { color: #8a8a8a; }
+    nav a.text-gray-600:hover { color: #fafafa; background: #171717; }
+    nav a.text-gray-600[href="/study-buddy"] { color: #fafafa; background: #171717; }
+
+    .sb-mono { font-family: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .sb-grid {
+        background-image: radial-gradient(rgba(255, 255, 255, 0.09) 1px, transparent 1px);
+        background-size: 22px 22px;
+        -webkit-mask-image: radial-gradient(ellipse 60% 70% at 50% 0%, #000 20%, transparent 75%);
+        mask-image: radial-gradient(ellipse 60% 70% at 50% 0%, #000 20%, transparent 75%);
+    }
+    .sb-glow { background: radial-gradient(520px circle at 50% 0%, rgba(255, 255, 255, 0.08), transparent 70%); }
+    #quiz-container { scroll-margin-top: 72px; }
+
     #sb-loading { display: none; }
     #sb-loading.htmx-request { display: flex; }
     .sb-busy { display: none; }
     .htmx-request .sb-busy { display: inline; }
     .htmx-request .sb-idle { display: none; }
+
+    @keyframes sb-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+    .sb-reveal { animation: sb-in 0.45s cubic-bezier(0.2, 0.7, 0.2, 1) both; }
+    @keyframes sb-ring { from { stroke-dashoffset: 226.19; } }
+    .sb-ring { animation: sb-ring 1.2s cubic-bezier(0.2, 0.7, 0.2, 1) 0.15s both; }
+    @media (prefers-reduced-motion: reduce) { .sb-reveal, .sb-ring { animation: none; } }
 </style>
 
-<div class="max-w-2xl mx-auto space-y-8">
+<div class="relative">
+    <div aria-hidden="true" class="sb-grid pointer-events-none absolute inset-x-0 -top-8 h-80"></div>
+    <div aria-hidden="true" class="sb-glow pointer-events-none absolute inset-x-0 -top-8 h-80"></div>
 
-    <div class="space-y-2">
-        <p class="text-[11px] font-medium uppercase tracking-widest text-neutral-400">Study Buddy</p>
-        <h1 class="text-3xl font-semibold tracking-tight text-neutral-900">Drop a PDF, get a quiz</h1>
-        <p class="text-neutral-500 leading-relaxed">Upload lecture slides or a textbook chapter. Gemini writes practice questions and explains every one you miss.</p>
-    </div>
+    <div class="relative mx-auto max-w-2xl space-y-10 pb-12">
 
-    <form id="sb-upload"
-          hx-post="/study-buddy/upload"
-          hx-encoding="multipart/form-data"
-          hx-trigger="change from:#sb-file"
-          hx-target="#quiz-container"
-          hx-indicator="#sb-loading"
-          x-data="{ dragging: false, fileName: '' }"
-          @htmx:after-request="$refs.file.value = ''"
-          class="space-y-4">
+        <header class="space-y-5 pt-10 text-center">
+            <span class="sb-mono inline-flex items-center gap-2 rounded-full border border-neutral-800 bg-neutral-950/80 px-3 py-1 text-[11px] uppercase tracking-[0.2em] text-neutral-400">
+                <span class="h-1.5 w-1.5 animate-pulse rounded-full bg-neutral-100"></span>
+                Study Buddy
+            </span>
+            <h1 class="text-4xl font-semibold leading-[1.05] tracking-tight text-white sm:text-5xl">
+                Drop a PDF.<br><span class="text-neutral-500">Get a quiz.</span>
+            </h1>
+            <p class="mx-auto max-w-md leading-relaxed text-neutral-400">
+                Upload lecture slides or a textbook chapter. Gemini writes practice questions and explains every one you miss.
+            </p>
+        </header>
 
-        <div class="flex items-center gap-3">
-            <span class="text-sm text-neutral-500">Questions</span>
-            <div class="inline-flex p-1 bg-neutral-100 rounded-lg">
-                {% for n in [5, 10, 15] %}
-                <label class="cursor-pointer">
-                    <input type="radio" name="num_questions" value="{{ n }}" class="peer sr-only" {% if n == 5 %}checked{% endif %}>
-                    <span class="block px-4 py-1.5 rounded-md text-sm font-medium text-neutral-500 transition peer-checked:bg-white peer-checked:text-neutral-900 peer-checked:shadow-sm">{{ n }}</span>
-                </label>
-                {% endfor %}
+        <form id="sb-upload"
+              hx-post="/study-buddy/upload"
+              hx-encoding="multipart/form-data"
+              hx-trigger="change from:#sb-file"
+              hx-target="#quiz-container"
+              hx-swap="innerHTML show:top"
+              hx-indicator="#sb-loading"
+              x-data="{ dragging: false, fileName: '' }"
+              @htmx:after-request="$refs.file.value = ''"
+              class="space-y-4">
+
+            <div class="flex items-center justify-center gap-3">
+                <span class="sb-mono text-[11px] uppercase tracking-[0.2em] text-neutral-500">Questions</span>
+                <div class="inline-flex rounded-full border border-neutral-800 bg-neutral-950 p-1">
+                    {% for n in [5, 10, 15] %}
+                    <label class="cursor-pointer">
+                        <input type="radio" name="num_questions" value="{{ n }}" class="peer sr-only" {% if n == 5 %}checked{% endif %}>
+                        <span class="sb-mono block rounded-full px-4 py-1 text-sm text-neutral-500 transition hover:text-neutral-200 peer-checked:bg-white peer-checked:text-black peer-focus-visible:ring-2 peer-focus-visible:ring-white/40">{{ n }}</span>
+                    </label>
+                    {% endfor %}
+                </div>
             </div>
+
+            <label for="sb-file"
+                   class="group relative block cursor-pointer rounded-3xl border border-dashed p-12 text-center transition duration-300 has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-white/30"
+                   :class="dragging ? 'scale-[1.01] border-white bg-neutral-900' : 'border-neutral-800 bg-neutral-950/60 hover:border-neutral-600 hover:bg-neutral-950'"
+                   @dragover.prevent="dragging = true"
+                   @dragleave.prevent="dragging = false"
+                   @drop.prevent="dragging = false; $refs.file.files = $event.dataTransfer.files; $refs.file.dispatchEvent(new Event('change', { bubbles: true }))">
+                <div class="mx-auto mb-5 flex h-14 w-14 items-center justify-center rounded-2xl border border-neutral-800 bg-neutral-900 transition duration-300 group-hover:-translate-y-0.5 group-hover:border-neutral-600">
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="text-neutral-300">
+                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M12 18v-6"/><path d="m9 15 3-3 3 3"/>
+                    </svg>
+                </div>
+                <p class="text-base text-neutral-100" x-text="fileName || 'Drop lecture slides or a textbook PDF'">Drop lecture slides or a textbook PDF</p>
+                <p class="sb-mono mt-2 text-xs text-neutral-500">or click to browse · PDF up to 20 MB</p>
+                <input id="sb-file" x-ref="file" type="file" name="file" accept=".pdf,application/pdf" class="sr-only"
+                       @change="fileName = $event.target.files[0]?.name || ''">
+            </label>
+        </form>
+
+        <div id="sb-loading" class="flex-col items-center gap-4 py-6"
+             x-data="{ i: 0, steps: ['Reading your PDF', 'Finding the key concepts', 'Writing questions', 'Checking the answer key'] }"
+             x-init="setInterval(() => { i = (i + 1) % steps.length }, 2400)"
+             @htmx:before-request.window="i = 0">
+            <div class="h-7 w-7 animate-spin rounded-full border-[1.5px] border-neutral-800 border-t-white"></div>
+            <p class="sb-mono text-xs uppercase tracking-[0.2em] text-neutral-400" x-text="steps[i] + '…'">Reading your PDF…</p>
         </div>
 
-        <label for="sb-file"
-               class="block border border-dashed rounded-2xl p-12 text-center cursor-pointer transition"
-               :class="dragging ? 'border-neutral-900 bg-neutral-100' : 'border-neutral-300 bg-white hover:border-neutral-500'"
-               @dragover.prevent="dragging = true"
-               @dragleave.prevent="dragging = false"
-               @drop.prevent="dragging = false; $refs.file.files = $event.dataTransfer.files; $refs.file.dispatchEvent(new Event('change', { bubbles: true }))">
-            <div class="mx-auto mb-4 w-12 h-12 rounded-xl border border-neutral-200 bg-neutral-50 flex items-center justify-center">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" class="text-neutral-500">
-                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M12 18v-6"/><path d="m9 15 3-3 3 3"/>
-                </svg>
-            </div>
-            <p class="text-neutral-800" x-text="fileName || 'Drop lecture slides or a textbook PDF'"></p>
-            <p class="text-sm text-neutral-400 mt-1">or click to browse · max 20 MB</p>
-            <input id="sb-file" x-ref="file" type="file" name="file" accept=".pdf,application/pdf" class="sr-only"
-                   @change="fileName = $event.target.files[0]?.name || ''">
-        </label>
-    </form>
+        <div id="quiz-container"></div>
 
-    <div id="sb-loading" class="flex-col items-center gap-3 py-6">
-        <div class="w-8 h-8 border-2 border-neutral-200 border-t-neutral-900 rounded-full animate-spin"></div>
-        <p class="text-sm text-neutral-500">Gemini is reading your PDF and writing questions...</p>
+        <p class="sb-mono text-center text-[11px] uppercase tracking-[0.2em] text-neutral-700">Runs on localhost · Powered by Gemini</p>
     </div>
-
-    <div id="quiz-container"></div>
-
 </div>
 {% endblock %}
