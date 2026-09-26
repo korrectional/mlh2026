@@ -102,7 +102,7 @@ async def _build_analysis(filename: str, text: str) -> HTMLResponse:
             context=text[:MAX_CONTEXT_CHARS],
             system_prompt="You are an expert tutor who turns course material into short daily lessons.",
         )
-        data = json.loads(raw)
+        data = _as_object(json.loads(raw), "concepts")
     except Exception as exc:
         return _error(f"Analysis failed: {exc}")
 
@@ -144,7 +144,7 @@ async def _build_quiz(filename: str, text: str, num_questions: int) -> HTMLRespo
             context=text[:MAX_CONTEXT_CHARS],
             system_prompt="You are a study buddy who writes practice quizzes from a student's course material.",
         )
-        data = json.loads(raw)
+        data = _as_object(json.loads(raw), "questions")
     except Exception as exc:
         return _error(f"Quiz generation failed: {exc}")
 
@@ -176,6 +176,10 @@ async def build_plan(plan_id: str = Form(...), per_day: int = Form(...), exam_da
     if not plan:
         return _expired()
     plan["per_day"] = max(1, min(per_day, 240))
+    if plan["today"] >= plan["per_day"]:
+        plan["goal_days"].add(plan["day"])
+    else:
+        plan["goal_days"].discard(plan["day"])
     try:
         plan["exam"] = date.fromisoformat(exam_date) if exam_date else None
     except ValueError:
@@ -232,7 +236,8 @@ async def answer_step(plan_id: str, kind: str = Form(...), idx: int = Form(...),
         plan["credited"] += concept["minutes"]
         plan["today"] += concept["minutes"]
 
-    just_hit_goal = plan["today"] >= plan["per_day"] and day not in plan["goal_days"]
+    finished = kind != "review" and _next_concept(plan) is None
+    just_hit_goal = (plan["today"] >= plan["per_day"] or finished) and day not in plan["goal_days"]
     if just_hit_goal:
         plan["goal_days"].add(day)
 
@@ -415,17 +420,32 @@ Student's answer: {q['options'][choice]}
 Correct answer: {q['options'][q['correct_index']]}"""
 
 
+def _as_object(data, key: str) -> dict:
+    """Accept {key: [...]}, a list wrapping that object, or a bare list of items; anything else becomes {}."""
+    if isinstance(data, list):
+        wrapped = [d for d in data if isinstance(d, dict) and key in d]
+        data = wrapped[0] if wrapped else {key: data}
+    return data if isinstance(data, dict) else {}
+
+
 def _clean_question(q) -> dict | None:
     if not isinstance(q, dict):
         return None
     options = q.get("options")
     idx = q.get("correct_index")
+    if isinstance(options, list) and all(isinstance(o, (str, int, float)) and not isinstance(o, bool) for o in options):
+        options = [str(o) for o in options]
+    if isinstance(idx, float) and idx.is_integer():
+        idx = int(idx)
+    elif isinstance(idx, str) and idx.strip().isdigit():
+        idx = int(idx.strip())
     if not (
         isinstance(q.get("question"), str)
         and isinstance(options, list)
         and len(options) == 4
         and all(isinstance(o, str) for o in options)
         and isinstance(idx, int)
+        and not isinstance(idx, bool)
         and 0 <= idx < 4
     ):
         return None
@@ -457,14 +477,17 @@ def _clean_concepts(raw_concepts) -> list[dict]:
         if cid in seen_ids:
             cid = f"{cid}-{len(clean) + 1}"
         seen_ids.add(cid)
-        difficulty = c.get("difficulty")
+        try:
+            difficulty = int(float(c.get("difficulty")))
+        except (TypeError, ValueError):
+            difficulty = 2
         terms = c.get("key_terms") if isinstance(c.get("key_terms"), list) else []
         prereqs = c.get("prerequisites") if isinstance(c.get("prerequisites"), list) else []
         clean.append({
             "id": cid,
             "name": c["name"],
             "summary": str(c.get("summary") or ""),
-            "difficulty": int(difficulty) if difficulty in (1, 2, 3) else 2,
+            "difficulty": difficulty if difficulty in (1, 2, 3) else 2,
             "key_terms": [str(t) for t in terms][:8],
             "prerequisites": [str(p) for p in prereqs],
             "lesson": c["lesson"],

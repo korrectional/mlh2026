@@ -123,9 +123,9 @@
                 <span x-text="(sessions === 1 ? 'session' : 'sessions') + ' of ' + per + ' minutes to learn it all.'"></span>
             </p>
             <p x-show="daysLeft !== null && daysLeft > 0 && sessions <= daysLeft" x-cloak class="text-sm text-neutral-400"
-               x-text="'You\'ll finish ' + plural(daysLeft - sessions, 'day') + ' before your exam.'"></p>
+               x-text="daysLeft === sessions ? 'You\'ll finish the day before your exam.' : 'You\'ll finish with ' + plural(daysLeft - sessions, 'day') + ' to spare before your exam.'"></p>
             <p x-show="daysLeft !== null && daysLeft > 0 && sessions > daysLeft" x-cloak class="text-sm text-white"
-               x-text="'At ' + per + ' min/day you\'ll finish ' + plural(sessions - daysLeft, 'day') + ' after your exam. You need ' + needed + ' min/day.'"></p>
+               x-text="'At ' + per + ' min/day you\'d need ' + plural(sessions - daysLeft, 'more day') + ' than you have before your exam. You need ' + needed + ' min/day.'"></p>
             <p x-show="daysLeft !== null && daysLeft <= 0" x-cloak class="text-sm text-white">That date is today or already passed.</p>
         </div>
 

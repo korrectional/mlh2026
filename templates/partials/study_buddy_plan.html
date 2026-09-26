@@ -32,15 +32,17 @@
         </div>
     </div>
 
-    {% if exam %}
+    {% if exam and not all_done %}
     <div class="rounded-2xl border {{ 'border-neutral-800' if exam.fits else 'border-white' }} bg-neutral-950 p-5">
-        {% if exam.days_left <= 0 %}
-        <p class="text-white">Your exam date has passed. Pick a new one to keep a deadline on the plan.</p>
+        {% if exam.days_left < 0 %}
+        <p class="text-white">Your exam date has passed.</p>
+        {% elif exam.days_left == 0 %}
+        <p class="text-white">Your exam is today. Good luck!</p>
         {% elif exam.fits %}
         <p class="text-neutral-300"><span class="font-medium text-white">On track.</span> {{ exam.sessions }} {{ 'session' if exam.sessions == 1 else 'sessions' }} left and {{ exam.days_left }} {{ 'day' if exam.days_left == 1 else 'days' }} until your exam.</p>
         {% else %}
         <div class="flex flex-wrap items-center justify-between gap-4">
-            <p class="text-white">At {{ plan.per_day }} min/day you'll finish {{ exam.late_by }} {{ 'day' if exam.late_by == 1 else 'days' }} after your exam.</p>
+            <p class="text-white">At {{ plan.per_day }} min/day you'd need {{ exam.late_by }} more {{ 'day' if exam.late_by == 1 else 'days' }} than you have before your exam.</p>
             <form hx-post="/study-buddy/plan" hx-target="#sb-stage" hx-swap="innerHTML show:top">
                 <input type="hidden" name="plan_id" value="{{ plan.id }}">
                 <input type="hidden" name="per_day" value="{{ exam.needed_per_day }}">
