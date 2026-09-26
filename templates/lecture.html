@@ -3,19 +3,90 @@
 {% block title %}Live Lecture Note-Taker{% endblock %}
 
 {% block content %}
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@300..700&family=Geist+Mono:wght@400..600&display=swap">
+<style>
+    /* Dark theme scoped to this page to match Study Buddy and the Dashboard; base.html is untouched. */
+    :root { color-scheme: dark; }
+    body.bg-gray-50 { background: #0a0a0a; color: #d4d4d4; font-family: "Geist", ui-sans-serif, system-ui, sans-serif; }
+    ::selection { background: #fafafa; color: #0a0a0a; }
+    nav.bg-white { background: rgba(10, 10, 10, 0.72); border-color: #1c1c1c; box-shadow: none; backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); }
+    nav a.text-brand-600, nav a.text-brand-600:hover { color: #fafafa; }
+    nav a.text-gray-600 { color: #8a8a8a; }
+    nav a.text-gray-600:hover { color: #fafafa; background: #171717; }
+    nav a.text-gray-600[href="/lecture"] { color: #fafafa; background: #171717; }
+    main .text-white { color: #ffffff; }
+    main .shadow-sm, main .shadow, main .shadow-md, main .shadow-lg { box-shadow: none; }
+    .lec-mono { font-family: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace; }
+    textarea, input { background: #111111; }
+</style>
+<script>
+    // Page-scoped palette: light-theme grays and white cards flip dark, brand becomes Wolfpack Red,
+    // and the amber/blue/green notices go monochrome so the page matches the rest of the toolkit.
+    (function () {
+        var mono = { 50: '#141414', 100: '#1f1f1f', 200: '#333333', 300: '#525252', 400: '#737373', 500: '#a3a3a3',
+                     600: '#d4d4d4', 700: '#e5e5e5', 800: '#fafafa', 900: '#fafafa' };
+        var cfg = window.tailwind && tailwind.config ? tailwind.config : {};
+        var theme = cfg.theme || {};
+        var extend = theme.extend || {};
+        var colors = Object.assign({}, extend.colors || {}, {
+            white: '#0a0a0a',
+            gray: { 50: '#111111', 100: '#1a1a1a', 200: '#262626', 300: '#404040', 400: '#737373', 500: '#8f8f8f',
+                    600: '#a3a3a3', 700: '#d4d4d4', 800: '#e5e5e5', 900: '#fafafa' },
+            brand: { 50: '#171717', 100: '#262626', 200: '#333333', 300: '#525252', 400: '#737373', 500: '#CC0000',
+                     600: '#CC0000', 700: '#990000', 800: '#fafafa' },
+            red: { 50: '#1f0a0a', 100: '#2b0e0e', 200: '#5c1a1a', 300: '#7a1f1f', 400: '#ff5c5c', 500: '#ff3b3b',
+                   600: '#CC0000', 700: '#e5484d', 800: '#fafafa', 900: '#fafafa' },
+            amber: mono, yellow: mono, blue: mono, green: mono, purple: mono,
+        });
+        tailwind.config = Object.assign({}, cfg, { theme: Object.assign({}, theme, { extend: Object.assign({}, extend, { colors: colors }) }) });
+    })();
+    // The shared nav (base.html) has emoji labels; strip them on this page only.
+    document.addEventListener('DOMContentLoaded', function () {
+        var emoji = /[\u{1F000}-\u{1FAFF}\u{2300}-\u{23FF}\u{2600}-\u{27BF}\u{FE0F}\u{200D}]/gu;
+        document.querySelectorAll('nav a').forEach(function (a) {
+            var walker = document.createTreeWalker(a, NodeFilter.SHOW_TEXT);
+            var node;
+            while ((node = walker.nextNode())) { node.nodeValue = node.nodeValue.replace(emoji, ''); }
+            a.innerHTML = a.innerHTML.trim();
+        });
+    });
+</script>
 <div x-data="lectureRecorder()" class="space-y-6">
+
+    <!-- Hero -->
+    <section class="relative flex min-h-[320px] items-end overflow-hidden rounded-3xl border border-neutral-800 bg-neutral-950">
+        <img src="/static/img/lecture-hunt.jpg" alt="Hunt Library commons area at NC State"
+             class="absolute inset-0 h-full w-full object-cover object-center">
+        <div aria-hidden="true" class="absolute inset-0 bg-gradient-to-t from-[#0a0a0a] via-[#0a0a0a]/55 to-transparent"></div>
+        <div aria-hidden="true" class="absolute inset-0 bg-gradient-to-r from-[#0a0a0a]/70 via-[#0a0a0a]/20 to-transparent"></div>
+        <div aria-hidden="true" class="absolute inset-x-0 top-0 h-0.5 bg-[#CC0000]"></div>
+        <div class="relative max-w-2xl space-y-4 p-6 pb-10 sm:p-10">
+            <span class="lec-mono inline-flex items-center gap-2 rounded-full border border-neutral-700 bg-black/40 px-3 py-1 text-[11px] uppercase tracking-[0.2em] text-neutral-300 backdrop-blur-sm">
+                <span class="h-1.5 w-1.5 animate-pulse rounded-full bg-[#CC0000]"></span>
+                NC State · Lecture
+            </span>
+            <h1 class="text-4xl font-semibold leading-[1.05] tracking-tight text-neutral-50 sm:text-5xl">
+                Every lecture.<br><span class="text-neutral-300">Captured and condensed.</span>
+            </h1>
+            <p class="max-w-lg leading-relaxed text-neutral-300">
+                Record a lecture and Gemini writes structured notes, a full transcript, and the concepts worth reviewing. Download the notes or the MP3.
+            </p>
+        </div>
+    </section>
 
     <!-- Header -->
     <div class="flex items-center justify-between">
         <div>
-            <h1 class="text-2xl font-bold">🎙️ Live Lecture Note-Taker</h1>
-            <p class="text-sm text-gray-500">Record a lecture to generate full transcripts, AI study notes, and MP3 audio.</p>
+            <p class="lec-mono text-[11px] uppercase tracking-[0.2em] text-neutral-500">Recorder</p>
+            <p class="mt-1 text-lg font-semibold tracking-tight text-neutral-50">Live Lecture Note-Taker</p>
         </div>
         <div class="flex items-center gap-2">
             <button type="button" @click="toggleRecording" :disabled="starting || downloading"
                     :class="recording ? 'bg-red-600 hover:bg-red-700' : 'bg-brand-600 hover:bg-brand-700'"
                     class="px-5 py-2.5 rounded-lg text-white font-medium text-sm transition flex items-center gap-2 disabled:opacity-50 shadow-sm">
-                <span x-text="starting ? status : recording ? '⏹ Stop' : '🎤 Record'"></span>
+                <span x-text="starting ? status : recording ? 'Stop' : 'Record'"></span>
             </button>
 
             <!-- Split Download Button -->
@@ -25,7 +96,7 @@
                 <button type="button" @click="downloadDefaultNotes()"
                         :disabled="notesLoading || !notes"
                         class="px-4 py-2.5 rounded-l-lg bg-white border border-gray-300 text-gray-700 hover:bg-gray-50 font-medium text-sm transition flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed">
-                    <span>📥</span>
+                    
                     <span x-text="notesLoading ? 'Notes Generating...' : 'Download Notes'"></span>
                 </button>
 
@@ -62,7 +133,7 @@
                         <label class="flex items-center gap-2.5 p-2 rounded-lg hover:bg-gray-50 cursor-pointer border border-transparent hover:border-gray-200 transition">
                             <input type="checkbox" x-model="exportOptions.notes" class="rounded text-brand-600 focus:ring-brand-500 w-4 h-4">
                             <div class="flex-1 min-w-0">
-                                <span class="font-medium text-gray-800 text-xs block">📝 Lecture Notes</span>
+                                <span class="font-medium text-gray-800 text-xs block"> Lecture Notes</span>
                                 <span class="text-[11px] text-gray-400 block" x-text="notes ? 'Ready' : notesLoading ? 'Generating...' : 'Not available'"></span>
                             </div>
                         </label>
@@ -70,7 +141,7 @@
                         <label class="flex items-center gap-2.5 p-2 rounded-lg hover:bg-gray-50 cursor-pointer border border-transparent hover:border-gray-200 transition">
                             <input type="checkbox" x-model="exportOptions.transcript" class="rounded text-brand-600 focus:ring-brand-500 w-4 h-4">
                             <div class="flex-1 min-w-0">
-                                <span class="font-medium text-gray-800 text-xs block">🎙️ Transcript</span>
+                                <span class="font-medium text-gray-800 text-xs block"> Transcript</span>
                                 <span class="text-[11px] text-gray-400 block" x-text="transcript.length > 0 ? 'Ready' : transcriptionLoading ? 'Transcribing...' : 'Not available'"></span>
                             </div>
                         </label>
@@ -78,7 +149,7 @@
                         <label class="flex items-center gap-2.5 p-2 rounded-lg hover:bg-gray-50 cursor-pointer border border-transparent hover:border-gray-200 transition">
                             <input type="checkbox" x-model="exportOptions.concepts" class="rounded text-brand-600 focus:ring-brand-500 w-4 h-4">
                             <div class="flex-1 min-w-0">
-                                <span class="font-medium text-gray-800 text-xs block">⚠️ Concepts to Review</span>
+                                <span class="font-medium text-gray-800 text-xs block">Concepts to Review</span>
                                 <span class="text-[11px] text-gray-400 block" x-text="concepts.length > 0 ? (concepts.length + ' items') : notesLoading ? 'Analyzing...' : 'Not available'"></span>
                             </div>
                         </label>
@@ -88,7 +159,7 @@
                     <button type="button" @click="downloadCombined(); downloadDropdownOpen = false;"
                             :disabled="!exportOptions.notes && !exportOptions.transcript && !exportOptions.concepts"
                             class="w-full py-2 px-3 bg-brand-600 hover:bg-brand-700 disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-medium rounded-lg transition text-center shadow-sm">
-                        📥 Download Selected (.md)
+                         Download Selected (.md)
                     </button>
 
                     <!-- Divider -->
@@ -99,7 +170,7 @@
                             :disabled="downloading"
                             class="w-full text-left py-2 px-2.5 rounded-lg hover:bg-gray-50 text-xs text-gray-700 flex items-center justify-between transition disabled:opacity-50">
                         <span class="flex items-center gap-1.5 font-medium">
-                            <span>🎵</span>
+                            <span></span>
                             <span>Audio Recording (.mp3)</span>
                         </span>
                         <span class="text-[10px] text-gray-400 font-mono" x-text="downloading ? 'Downloading...' : 'MP3'"></span>
@@ -161,7 +232,7 @@
         <div class="lg:col-span-2 bg-white rounded-xl border p-5">
             <div class="flex items-center justify-between mb-4">
                 <div class="flex items-center gap-2">
-                    <h2 class="text-sm font-semibold text-gray-500 uppercase tracking-wide">⚠️ Concepts to Review</h2>
+                    <h2 class="text-sm font-semibold text-gray-500 uppercase tracking-wide">Concepts to Review</h2>
                     <span x-show="concepts.length > 0" x-text="concepts.length"
                           class="px-2 py-0.5 rounded-full text-xs font-semibold bg-amber-100 text-amber-800"></span>
                 </div>
@@ -180,7 +251,7 @@
 
             <!-- No difficult concepts found state -->
             <p x-show="!notesLoading && concepts.length === 0 && notes" class="text-gray-500 text-sm italic py-4 text-center bg-gray-50 rounded-lg border">
-                ✅ No specific review flags detected — material appears straightforward.
+                 No specific review flags detected — material appears straightforward.
             </p>
 
             <!-- Concepts cards list -->
@@ -189,7 +260,7 @@
                     <div class="p-4 rounded-xl border border-amber-200 bg-amber-50/50 hover:bg-amber-50 transition space-y-2">
                         <div class="flex items-start justify-between gap-2">
                             <h3 class="font-semibold text-gray-900 text-sm flex items-center gap-1.5">
-                                <span class="text-amber-600 font-bold">📌</span>
+                                <span class="text-amber-600 font-bold"></span>
                                 <span x-text="item.concept"></span>
                             </h3>
                             <span class="px-2 py-0.5 rounded text-[11px] font-medium bg-amber-100 text-amber-800 whitespace-nowrap">
@@ -201,7 +272,7 @@
                             <span x-text="item.reason"></span>
                         </p>
                         <div x-show="item.tip" class="p-2.5 bg-white/90 rounded-lg border border-amber-100 text-xs text-gray-600 flex items-start gap-2">
-                            <span class="text-amber-500 font-bold">💡</span>
+                            <span class="text-amber-500 font-bold"></span>
                             <div>
                                 <span class="font-medium text-gray-800">Study Tip:</span>
                                 <span x-text="item.tip"></span>
@@ -499,11 +570,11 @@ function lectureRecorder() {
             parts.push(`# Lecture Materials & Study Guide\n*Exported: ${dateStr}*\n`);
 
             if (this.exportOptions.notes) {
-                parts.push(`---\n\n## 📝 Structured Notes\n\n${this.notes || '_No notes available._'}\n`);
+                parts.push(`---\n\n##  Structured Notes\n\n${this.notes || '_No notes available._'}\n`);
             }
 
             if (this.exportOptions.concepts) {
-                parts.push(`---\n\n## ⚠️ Concepts to Review\n`);
+                parts.push(`---\n\n## Concepts to Review\n`);
                 if (this.concepts && this.concepts.length > 0) {
                     this.concepts.forEach((c, i) => {
                         parts.push(`### ${i + 1}. ${c.concept}\n- **Why Review:** ${c.reason}\n- **Study Tip:** ${c.tip}\n`);
@@ -514,7 +585,7 @@ function lectureRecorder() {
             }
 
             if (this.exportOptions.transcript) {
-                parts.push(`---\n\n## 🎙️ Transcript\n`);
+                parts.push(`---\n\n##  Transcript\n`);
                 if (this.transcript && this.transcript.length > 0) {
                     parts.push(this.transcript.join('\n\n') + '\n');
                 } else {

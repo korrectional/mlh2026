@@ -6,8 +6,15 @@ Uses PyAutoGUI for keyboard simulation and pyperclip for clipboard.
 """
 
 import time
-import pyautogui
-import pyperclip
+
+try:
+    import pyautogui
+    import pyperclip
+except ImportError:  # e.g. Intel Macs on Python 3.9, where pyobjc won't build
+    class _MissingAutoGrab:
+        def __getattr__(self, name):
+            raise RuntimeError("Auto-grab needs pyautogui and pyperclip, which aren't installed here. Use \"Advanced: paste HTML manually\" instead.")
+    pyautogui = pyperclip = _MissingAutoGrab()
 
 
 def _put_clipboard(text: str) -> None:

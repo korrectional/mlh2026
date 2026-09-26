@@ -7,26 +7,26 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@300..700&family=Geist+Mono:wght@400..600&display=swap">
 <style>
-    /* Dark blue monotone theme, scoped to this page: overrides the shared light shell without editing base.html. */
+    /* Dark monochrome theme, scoped to this page: overrides the shared light shell without editing base.html. */
     :root { color-scheme: dark; }
     [x-cloak] { display: none !important; }
-    body.bg-gray-50 { background: #060b1a; color: #c3d3f5; font-family: "Geist", ui-sans-serif, system-ui, sans-serif; }
-    ::selection { background: #e3ecff; color: #060b1a; }
-    nav.bg-white { background: rgba(6, 11, 26, 0.72); border-color: #16203a; box-shadow: none; backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); }
+    body.bg-gray-50 { background: #0a0a0a; color: #d4d4d4; font-family: "Geist", ui-sans-serif, system-ui, sans-serif; }
+    ::selection { background: #fafafa; color: #0a0a0a; }
+    nav.bg-white { background: rgba(10, 10, 10, 0.72); border-color: #1c1c1c; box-shadow: none; backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); }
     nav.bg-white a { filter: grayscale(1); }
-    nav a.text-brand-600, nav a.text-brand-600:hover { color: #e3ecff; }
-    nav a.text-gray-600 { color: #7890c8; }
-    nav a.text-gray-600:hover { color: #e3ecff; background: #131d36; }
-    nav a.text-gray-600[href="/study-buddy"] { color: #e3ecff; background: #131d36; }
+    nav a.text-brand-600, nav a.text-brand-600:hover { color: #fafafa; }
+    nav a.text-gray-600 { color: #8a8a8a; }
+    nav a.text-gray-600:hover { color: #fafafa; background: #171717; }
+    nav a.text-gray-600[href="/study-buddy"] { color: #fafafa; background: #171717; }
 
     .sb-mono { font-family: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace; }
     .sb-grid {
-        background-image: radial-gradient(rgba(147, 178, 255, 0.13) 1px, transparent 1px);
+        background-image: radial-gradient(rgba(255, 255, 255, 0.09) 1px, transparent 1px);
         background-size: 22px 22px;
         -webkit-mask-image: radial-gradient(ellipse 60% 70% at 50% 0%, #000 20%, transparent 75%);
         mask-image: radial-gradient(ellipse 60% 70% at 50% 0%, #000 20%, transparent 75%);
     }
-    .sb-glow { background: radial-gradient(520px circle at 50% 0%, rgba(96, 140, 255, 0.16), transparent 70%); }
+    .sb-glow { background: radial-gradient(520px circle at 50% 0%, rgba(255, 255, 255, 0.08), transparent 70%); }
     #sb-stage { scroll-margin-top: 72px; }
     input[type="date"]::-webkit-calendar-picker-indicator { filter: invert(1); opacity: 0.6; }
 
@@ -44,22 +44,16 @@
 </style>
 
 <script>
-    // Page-scoped palette: Tailwind's neutral grays become a navy-to-pale-blue scale, and white/black become
-    // pale blue/deep navy, so every partial turns blue without touching base.html or the other tools.
-    (function () {
-        var cfg = window.tailwind && tailwind.config ? tailwind.config : {};
-        var theme = cfg.theme || {};
-        var extend = theme.extend || {};
-        var colors = Object.assign({}, extend.colors || {}, {
-            white: '#e3ecff',
-            black: '#060b1a',
-            neutral: {
-                50: '#f0f5ff', 100: '#e1eafc', 200: '#c3d3f5', 300: '#9fb6e6', 400: '#7890c8', 500: '#5a70a6',
-                600: '#435685', 700: '#2f3f66', 800: '#1f2c4d', 900: '#131d36', 950: '#0b1226',
-            },
+    // The shared nav (base.html) has emoji labels; strip them on this page only for a cleaner look.
+    document.addEventListener('DOMContentLoaded', function () {
+        var emoji = /[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE0F}\u{200D}]/gu;
+        document.querySelectorAll('nav a').forEach(function (a) {
+            var walker = document.createTreeWalker(a, NodeFilter.SHOW_TEXT);
+            var node;
+            while ((node = walker.nextNode())) { node.nodeValue = node.nodeValue.replace(emoji, ''); }
+            a.innerHTML = a.innerHTML.trim();
         });
-        tailwind.config = Object.assign({}, cfg, { theme: Object.assign({}, theme, { extend: Object.assign({}, extend, { colors: colors }) }) });
-    })();
+    });
 
     function studyBuddy() {
         return {
@@ -146,17 +140,20 @@
 
     <div class="relative mx-auto max-w-2xl space-y-10 pb-12" x-data="studyBuddy()" @htmx:before-request.window="step = 0">
 
-        <header class="space-y-5 pt-10 text-center">
-            <span class="sb-mono inline-flex items-center gap-2 rounded-full border border-neutral-800 bg-neutral-950/80 px-3 py-1 text-[11px] uppercase tracking-[0.2em] text-neutral-400">
-                <span class="h-1.5 w-1.5 animate-pulse rounded-full bg-neutral-100"></span>
-                Study Buddy
-            </span>
-            <h1 class="text-4xl font-semibold leading-[1.05] tracking-tight text-white sm:text-5xl">
-                Drop your notes.<br><span class="text-neutral-500">Get a plan.</span>
-            </h1>
-            <p class="mx-auto max-w-md leading-relaxed text-neutral-400">
-                Study Buddy scores how complex your material is, estimates how long it takes to learn, and turns it into daily sessions that fit the time you actually have.
-            </p>
+        <header class="grid items-center gap-8 pt-10 sm:grid-cols-[1.15fr_0.85fr]">
+            <div class="space-y-5 text-center sm:text-left">
+                <h1 class="text-4xl font-semibold leading-[1.05] tracking-tight text-white sm:text-5xl">
+                    Drop your notes.<br><span class="text-neutral-500">Get a plan.</span>
+                </h1>
+                <p class="mx-auto max-w-md leading-relaxed text-neutral-400 sm:mx-0">
+                    Study Buddy scores how complex your material is, estimates how long it takes to learn, and turns it into daily sessions that fit the time you actually have.
+                </p>
+            </div>
+            <figure class="relative mx-auto w-full max-w-xs overflow-hidden rounded-3xl border border-neutral-800 bg-neutral-950 sm:max-w-none">
+                <img src="/static/img/study-hunt-rooftop.jpg" alt="Hunt Library rooftop study area at NC State, at sunset"
+                     class="h-72 w-full object-cover object-center sm:h-80">
+                <div aria-hidden="true" class="absolute inset-0 bg-gradient-to-t from-[#0a0a0a]/80 via-transparent to-transparent"></div>
+            </figure>
         </header>
 
         <form id="sb-upload"

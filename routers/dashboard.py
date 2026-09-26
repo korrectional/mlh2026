@@ -11,6 +11,8 @@ Cache: scraped data is saved to a JSON file so page reloads don't
 re-trigger the PyAutoGUI scraping.
 """
 
+from __future__ import annotations
+
 from fastapi import APIRouter, Request, Form
 from fastapi.responses import HTMLResponse
 from pathlib import Path
@@ -105,7 +107,7 @@ async def open_moodle():
     <meta http-equiv="refresh" content="0;url={MOODLE_URL}">
     <style>body {{ font-family: sans-serif; padding: 2em; text-align: center; }}</style>
     </head><body>
-    <p>🔗 Opening Moodle dashboard...</p>
+    <p> Opening Moodle dashboard...</p>
     <p><a href="{MOODLE_URL}">Click here if not redirected</a></p>
     </body></html>
     ''')
@@ -131,13 +133,13 @@ async def bookmarklet_page():
     <html><head><meta charset="utf-8">
     <title>Dashboard Inspector Bookmarklet</title>
     </head><body style="font-family: sans-serif; max-width: 600px; margin: 2em auto; line-height: 1.6;">
-    <h1>📋 Bookmarklet</h1>
+    <h1> Bookmarklet</h1>
     <p>Drag this link to your bookmarks bar:</p>
     <p>
         <a href="{bookmarklet_js}"
            style="display: inline-block; padding: 12px 24px; background: #2563eb; color: white;
                   text-decoration: none; border-radius: 8px; font-weight: bold;">
-           📥 Send to Dashboard Inspector
+            Send to Dashboard Inspector
         </a>
     </p>
     <p>Then, when you're on your Moodle dashboard, click the bookmarklet.</p>
@@ -155,14 +157,14 @@ async def fetch_moodle():
         open_moodle()
         return '''
         <div class="p-4 bg-green-50 border border-green-200 rounded-lg text-sm">
-            <p class="font-semibold text-green-800">🌐 Moodle opened in your browser</p>
+            <p class="font-semibold text-green-800"> Moodle opened in your browser</p>
             <p class="text-green-700 mt-1">Log into WolfWare, then switch back here and click <strong>"Grab it!"</strong></p>
         </div>
         '''
     except Exception as e:
         return f'''
         <div class="p-4 bg-red-50 border border-red-200 rounded-lg text-sm">
-            <p class="font-semibold text-red-800">❌ Could not open browser</p>
+            <p class="font-semibold text-red-800"> Could not open browser</p>
             <p class="text-red-700 mt-1">{e}</p>
         </div>
         '''
@@ -182,7 +184,7 @@ async def bookmarklet_capture(html: str = Form("...")):
     <title>Received!</title>
     <style>body {{ font-family: sans-serif; padding: 2em; text-align: center; }}</style>
     </head><body>
-    <p>✅ Dashboard HTML captured! Go back to the Dashboard Inspector.</p>
+    <p> Dashboard HTML captured! Go back to the Dashboard Inspector.</p>
     <p><a href="/dashboard/">← Back to Dashboard Inspector</a></p>
     </body></html>
     ''')
@@ -199,7 +201,7 @@ async def debug_sample():
 
     rows = ""
     for i, a in enumerate(assignments):
-        overdue = '🔥 Overdue' if a.get('overdue') else '✅ On time'
+        overdue = ' Overdue' if a.get('overdue') else ' On time'
         course = a.get('course', 'N/A')
         due = a.get('due_date', 'N/A')
         title = a.get('title', 'Untitled')
@@ -213,7 +215,7 @@ async def debug_sample():
 
     return f"""
     <div class="text-sm">
-        <p class="font-semibold mb-2">📋 Parsed {len(assignments)} assignments</p>
+        <p class="font-semibold mb-2"> Parsed {len(assignments)} assignments</p>
         <table class="w-full border-collapse">
             <thead>
                 <tr class="bg-gray-100 text-left">
@@ -246,7 +248,7 @@ async def grab_moodle():
         if not html or len(html) < 100:
             return '''
             <div class="p-4 bg-yellow-50 border border-yellow-200 rounded-lg text-sm">
-                <p class="font-semibold text-yellow-800">😕 Didn't get much content</p>
+                <p class="font-semibold text-yellow-800"> Didn't get much content</p>
                 <p class="text-yellow-700 mt-1">
                     The page might not have loaded in time, or you need to
                     log into Moodle first. Try again.
@@ -256,7 +258,7 @@ async def grab_moodle():
         # Parse the grabbed HTML
         assignments = parse_dashboard(html)
 
-        # 🔍 Enrich each assignment: visit the individual assignment page
+        #  Enrich each assignment: visit the individual assignment page
         #    via PyAutoGUI and grab the full description text for AI context.
         #    This data is hidden from the user but sent to Gemini.
         if assignments:
@@ -266,12 +268,12 @@ async def grab_moodle():
                 _print_descriptions(assignments)
                 _save_cache(assignments)
             except Exception as e:
-                print(f"  ⚠️  Assignment description enrichment failed: {e}")
+                print(f"    Assignment description enrichment failed: {e}")
 
         if not assignments:
             return '''
             <div class="p-4 bg-yellow-50 border border-yellow-200 rounded-lg text-sm">
-                <p class="font-semibold text-yellow-800">📋 Page grabbed but no assignments found</p>
+                <p class="font-semibold text-yellow-800"> Page grabbed but no assignments found</p>
                 <p class="text-yellow-700 mt-1">
                     Got {} chars of page content but couldn't find any assignments.
                     Make sure you're on the <strong>Moodle Dashboard → Timeline</strong> view.
@@ -285,7 +287,7 @@ async def grab_moodle():
         <div class="space-y-4">
             <div class="flex items-center justify-between">
                 <h2 class="text-lg font-bold text-gray-900">
-                    📋 Found {len(assignments)} assignment{'s' if len(assignments) != 1 else ''}
+                     Found {len(assignments)} assignment{'s' if len(assignments) != 1 else ''}
                 </h2>
                 <span class="text-xs text-gray-400">Grabbed from your browser</span>
             </div>
@@ -297,7 +299,7 @@ async def grab_moodle():
     except Exception as e:
         return f'''
         <div class="p-4 bg-red-50 border border-red-200 rounded-lg text-sm">
-            <p class="font-semibold text-red-800">❌ Grab failed</p>
+            <p class="font-semibold text-red-800"> Grab failed</p>
             <p class="text-red-700 mt-1">{e}</p>
             <p class="text-red-600 text-xs mt-2">Make sure no other app is stealing focus during the grab.</p>
         </div>
@@ -312,9 +314,9 @@ async def clear_cache():
     """Delete the cache file and clear results from the dashboard."""
     if _CACHE_FILE.exists():
         _CACHE_FILE.unlink()
-        print("  🗑️  Cache cleared")
+        print("    Cache cleared")
     return """<div class="p-4 bg-gray-50 border border-gray-200 rounded-lg text-sm text-center">
-        <p class="font-semibold text-gray-700">🗑️ Cache cleared</p>
+        <p class="font-semibold text-gray-700"> Cache cleared</p>
         <p class="text-gray-500 mt-1">Grab your assignments again to start fresh.</p>
     </div>"""
 
@@ -340,7 +342,7 @@ async def scrape_only(dashboard_html: str = Form(...)):
 
     rows = ""
     for a in assignments:
-        overdue_badge = '🔥' if a.get('overdue') else ''
+        overdue_badge = '' if a.get('overdue') else ''
         rows += f"""
         <tr class="{"bg-red-50/50" if a.get('overdue') else ""}">
             <td class="px-3 py-2 text-sm font-medium">{f'<a href="{a.get("url", "")}" target="_blank" class="hover:text-brand-600 transition">{a.get("title", "")}</a>' if a.get('url') else a.get('title', '')} {overdue_badge}</td>
@@ -353,7 +355,7 @@ async def scrape_only(dashboard_html: str = Form(...)):
 
     return f"""
     <div class="p-4 bg-gray-50 rounded-lg border text-sm">
-        <p class="font-semibold mb-2">✅ {len(assignments)} assignment{'s' if len(assignments) != 1 else ''} parsed</p>
+        <p class="font-semibold mb-2"> {len(assignments)} assignment{'s' if len(assignments) != 1 else ''} parsed</p>
         <table class="w-full border-collapse">
             <thead>
                 <tr class="bg-gray-100 text-left">
@@ -381,7 +383,7 @@ async def inspect_dashboard(dashboard_html: str = Form(...)):
     if not assignments:
         return """
         <div class="p-6 bg-yellow-50 border border-yellow-200 rounded-xl text-center">
-            <p class="text-yellow-800 font-medium text-lg">😕 No assignments found</p>
+            <p class="text-yellow-800 font-medium text-lg"> No assignments found</p>
             <p class="text-yellow-700 text-sm mt-1">
                 Couldn't parse any assignments from that HTML.
                 Make sure you're copying from the <strong>Moodle Dashboard → Timeline</strong> view.
@@ -478,7 +480,7 @@ async def grab_instructions(
         if not html or len(html) < 100:
             return f'''
             <div class="p-4 bg-yellow-50 border border-yellow-200 rounded-lg text-sm mt-3">
-                <p class="font-semibold text-yellow-800">😕 Didn't get much content</p>
+                <p class="font-semibold text-yellow-800"> Didn't get much content</p>
                 <p class="text-yellow-700 mt-1">
                     The assignment page might not have loaded in time.
                     Try again and make sure your browser is focused.
@@ -494,7 +496,7 @@ async def grab_instructions(
         if not instructions and not doc_links:
             return f'''
             <div class="p-4 bg-yellow-50 border border-yellow-200 rounded-lg text-sm mt-3">
-                <p class="font-semibold text-yellow-800">📄 Page grabbed but no instructions found</p>
+                <p class="font-semibold text-yellow-800"> Page grabbed but no instructions found</p>
                 <p class="text-yellow-700 mt-1">
                     Grabbed {len(html)} characters but couldn't extract specific instructions.
                     <a href="{_escape_json(url)}" target="_blank" class="text-brand-600 hover:underline">Open manually ↗</a>
@@ -508,12 +510,12 @@ async def grab_instructions(
         # Google Doc links
         if doc_links:
             doc_items = "".join(
-                f'<li><a href="{d["url"]}" target="_blank" class="text-brand-600 hover:underline">📄 {_escape_html(d["text"])}</a></li>'
+                f'<li><a href="{d["url"]}" target="_blank" class="text-brand-600 hover:underline"> {_escape_html(d["text"])}</a></li>'
                 for d in doc_links
             )
             parts.append(f'''
                 <div class="mb-3">
-                    <p class="font-semibold text-sm text-gray-800 mb-1">📎 Reference Documents</p>
+                    <p class="font-semibold text-sm text-gray-800 mb-1"> Reference Documents</p>
                     <ul class="list-disc list-inside space-y-0.5 text-sm">{doc_items}</ul>
                 </div>
             ''')
@@ -521,12 +523,12 @@ async def grab_instructions(
         # Other links
         if other_links:
             other_items = "".join(
-                f'<li><a href="{l["url"]}" target="_blank" class="text-brand-600 hover:underline">🔗 {_escape_html(l["text"])}</a></li>'
+                f'<li><a href="{l["url"]}" target="_blank" class="text-brand-600 hover:underline"> {_escape_html(l["text"])}</a></li>'
                 for l in other_links
             )
             parts.append(f'''
                 <div class="mb-3">
-                    <p class="font-semibold text-sm text-gray-800 mb-1">🔗 Other Links</p>
+                    <p class="font-semibold text-sm text-gray-800 mb-1"> Other Links</p>
                     <ul class="list-disc list-inside space-y-0.5 text-sm">{other_items}</ul>
                 </div>
             ''')
@@ -539,7 +541,7 @@ async def grab_instructions(
                 display_text += "..."
             parts.append(f'''
                 <div>
-                    <p class="font-semibold text-sm text-gray-800 mb-1">📝 Instructions</p>
+                    <p class="font-semibold text-sm text-gray-800 mb-1"> Instructions</p>
                     <div class="text-sm text-gray-700 whitespace-pre-wrap max-h-60 overflow-y-auto bg-gray-50 rounded p-3">{_escape_html(display_text)}</div>
                 </div>
             ''')
@@ -549,7 +551,7 @@ async def grab_instructions(
         return f'''
         <div class="p-4 bg-blue-50 border border-blue-200 rounded-lg text-sm mt-3">
             <p class="font-semibold text-blue-800 mb-2 flex items-center gap-2">
-                📥 Instructions Grabbed
+                 Instructions Grabbed
                 <span class="text-xs font-normal text-blue-600">for {_escape_html(title)}</span>
             </p>
             {content}
@@ -563,7 +565,7 @@ async def grab_instructions(
     except Exception as e:
         return f'''
         <div class="p-4 bg-red-50 border border-red-200 rounded-lg text-sm mt-3">
-            <p class="font-semibold text-red-800">❌ Grab failed</p>
+            <p class="font-semibold text-red-800"> Grab failed</p>
             <p class="text-red-700 mt-1">{_escape_html(str(e))}</p>
             <p class="text-red-600 text-xs mt-2">
                 Make sure no other app is stealing focus during the grab.
@@ -611,7 +613,7 @@ async def study_points(
 
     return f"""
     <div class="p-4 bg-brand-50 border border-brand-200 rounded-lg text-sm mt-3">
-        <p class="font-semibold text-brand-800 mb-2">📚 Study Points</p>
+        <p class="font-semibold text-brand-800 mb-2"> Study Points</p>
         <div class="text-gray-700 prose prose-sm max-w-none">
             {_render_markdown(result)}
         </div>
@@ -673,7 +675,7 @@ async def generate_quiz(
         # Fallback: render as markdown if parsing fails
         return f"""
         <div class="p-4 bg-green-50 border border-green-200 rounded-lg text-sm mt-3">
-            <p class="font-semibold text-green-800 mb-2">📝 Practice Quiz</p>
+            <p class="font-semibold text-green-800 mb-2"> Practice Quiz</p>
             <div class="text-gray-700 prose prose-sm max-w-none quiz-content">
                 {_render_markdown(result)}
             </div>
@@ -853,9 +855,9 @@ def _render_cards(assignments: list[dict]) -> str:
                         {overdue_badge}
                     </div>
                     <p class="text-sm text-gray-500 mt-0.5">
-                        <span class="inline-flex items-center gap-1">📚 {course}</span>
+                        <span class="inline-flex items-center gap-1"> {course}</span>
                         <span class="mx-2">·</span>
-                        <span class="inline-flex items-center gap-1">📅 {due}</span>
+                        <span class="inline-flex items-center gap-1"> {due}</span>
                     </p>
                 </div>
             </div>
@@ -865,19 +867,19 @@ def _render_cards(assignments: list[dict]) -> str:
                         hx-vals='{{"assignment": "{_escape_json(title)}", "course": "{_escape_json(course)}", "due_date": "{_escape_json(due)}", "description": "{_escape_json(a.get('description', ''))}"}}'
                         hx-indicator="#spinner-{i}"
                         class="px-3 py-1.5 text-xs font-medium rounded-lg bg-brand-50 text-brand-700 hover:bg-brand-100 border border-brand-200 transition">
-                    📚 Study Points
+                     Study Points
                 </button>
                 <button hx-post="/dashboard/quiz" hx-target="#assignment-{i} .results-area"
                         hx-vals='{{"assignment": "{_escape_json(title)}", "course": "{_escape_json(course)}", "due_date": "{_escape_json(due)}", "description": "{_escape_json(a.get('description', ''))}"}}'
                         hx-indicator="#spinner-{i}"
                         class="px-3 py-1.5 text-xs font-medium rounded-lg bg-green-50 text-green-700 hover:bg-green-100 border border-green-200 transition">
-                    📝 Generate Quiz
+                     Generate Quiz
                 </button>
                 {"""<button hx-post="/dashboard/grab-instructions" hx-target="#assignment-{i} .results-area"
                         hx-vals='{{"url": "{_escape_json(url)}", "title": "{_escape_json(title)}"}}'
                         hx-indicator="#spinner-{i}"
                         class="px-3 py-1.5 text-xs font-medium rounded-lg bg-purple-50 text-purple-700 hover:bg-purple-100 border border-purple-200 transition">
-                    📥 Grab Instructions
+                     Grab Instructions
                 </button>""" if url else ""}
                 <div id="spinner-{i}" class="htmx-indicator">
                     <div class="w-4 h-4 border-2 border-brand-200 border-t-brand-600 rounded-full animate-spin"></div>
