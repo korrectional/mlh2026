@@ -415,53 +415,93 @@ def extract_assignment_detail(html: str) -> dict:
     """
     Parse an individual assignment page to extract description and metadata.
 
-    Returns cleaner text than the dashboard-level parse — this is the
-    full assignment description for AI consumption.
+    The captured content might be rendered plain text (from Ctrl+A/Ctrl+V
+    on a live page) OR raw HTML. Handles both cases.
+
+    For plain text: remove common header/footer noise lines and return
+    as-is, trimmed to 20K chars.
+
+    For HTML: use BeautifulSoup selectors, fall back to body text.
     """
     raw_len = len(html)
+    stripped = html.strip()
 
-    # Debug: show what we're actually parsing
-    print(f"      raw HTML preview: {html[:300].strip()!r}")
+    # ── Detect: is this plain text or HTML? ────────────────────────────
+    is_plain_text = not stripped.startswith("<") or "<html" not in stripped[:200].lower()
 
-    soup = BeautifulSoup(html, "html.parser")
+    if is_plain_text:
+        # ── Plain-text path ────────────────────────────────────────────
+        # Split into lines, filter out common Moodle chrome noise
+        lines = stripped.split("\n")
+        filtered = []
+        noise_prefixes = [
+            "Skip to main content", "NC State", "WolfWare",
+            "Home", "Dashboard", "My courses",
+            "Collapse", "Blocks", "Jump to...",
+            "Submission status", "Grading status",
+            "Time remaining", "Last modified",
+            "Submission comments", "CommentsComments",
+            "-------------------------------",
+        ]
+        for line in lines:
+            clean = line.strip()
+            if not clean:
+                continue
+            # Skip pure separator lines (dashes, equals)
+            if all(c in "-=_•·" for c in clean):
+                continue
+            # Skip common chrome lines
+            skip = False
+            for prefix in noise_prefixes:
+                if clean.startswith(prefix):
+                    skip = True
+                    break
+            if skip:
+                continue
+            filtered.append(clean)
 
-    # Strip nav, header, footer, script, style noise for a clean read
-    for tag in soup.select("script, style, nav, header, footer, .navbar, .footer, .breadcrumb, .block_navigation, #page-footer, .drawer, .block"):
-        tag.decompose()
+        description = "\n".join(filtered)
+        print(f"      plain-text: {raw_len} raw → {len(description)} chars after noise filter")
 
-    # Priority: assignment description area — widen the net
-    description = ""
-    desc_el = soup.select_one(
-        ".no-overflow, "
-        "#intro, "
-        "[data-region='assignment-info'], "
-        ".activity-description, "
-        ".generalbox, "
-        ".box.py-3, "
-        "div[data-activityname] div.description, "
-        ".assignmentcontent, "
-        "#page-content, "
-        "[role='main']"
-    )
-    if desc_el:
-        description = desc_el.get_text("\n", strip=True)
+    else:
+        # ── HTML path ──────────────────────────────────────────────────
+        soup = BeautifulSoup(html, "html.parser")
 
-    # Fallback: grab ALL visible body text (strip nav already done above)
-    if not description or len(description) < 50:
-        body = soup.find("body")
-        if body:
-            description = body.get_text("\n", strip=True)
+        for tag in soup.select("script, style, nav, header, footer, .navbar, .footer, .breadcrumb, .block_navigation, #page-footer, .drawer, .block"):
+            tag.decompose()
+
+        description = ""
+        desc_el = soup.select_one(
+            ".no-overflow, #intro, [data-region='assignment-info'], "
+            ".activity-description, .generalbox, .box.py-3, "
+            "div[data-activityname] div.description, .assignmentcontent, "
+            "#page-content, [role='main']"
+        )
+        if desc_el:
+            description = desc_el.get_text("\n", strip=True)
+
+        if not description or len(description) < 50:
+            body = soup.find("body")
+            if body:
+                description = body.get_text("\n", strip=True)
+
+        print(f"      html: {raw_len} raw → {len(description)} chars after extraction")
 
     description = description.strip()[:20000]
 
     # Due date from the assignment info section
-    date_el = soup.select_one(
-        "[data-region='activity-dates'], .assign-due-date, "
-        "dt:contains('Due') + dd, th:contains('Due') + td"
-    )
+    date_el = None
+    try:
+        soup = BeautifulSoup(html, "html.parser") if not is_plain_text else None
+        if soup:
+            date_el = soup.select_one(
+                "[data-region='activity-dates'], .assign-due-date, "
+                "dt:contains('Due') + dd, th:contains('Due') + td"
+            )
+    except Exception:
+        pass
     due_date = date_el.get_text(strip=True) if date_el else ""
 
-    print(f"      extracted {len(description)} chars from {raw_len} raw HTML")
     return {
         "description": description,
         "due_date": due_date,
