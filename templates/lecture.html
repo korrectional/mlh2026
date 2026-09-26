@@ -1,0 +1,110 @@
+{% extends "base.html" %}
+
+{% block title %}Live Lecture Note-Taker{% endblock %}
+
+{% block content %}
+<div x-data="lectureRecorder()" class="space-y-6">
+
+    <!-- Header -->
+    <div class="flex items-center justify-between">
+        <div>
+            <h1 class="text-2xl font-bold">🎙️ Live Lecture Note-Taker</h1>
+            <p class="text-sm text-gray-500">Record a lecture or class. Notes and flagged concepts appear in real time.</p>
+        </div>
+        <div class="flex gap-2">
+            <button @click="toggleRecording"
+                    :class="recording ? 'bg-red-600 hover:bg-red-700' : 'bg-brand-600 hover:bg-brand-700'"
+                    class="px-5 py-2.5 rounded-lg text-white font-medium text-sm transition flex items-center gap-2">
+                <span x-text="recording ? '⏹ Stop' : '🎤 Record'"></span>
+            </button>
+        </div>
+    </div>
+
+    <!-- Status bar -->
+    <div class="flex items-center gap-3 text-sm text-gray-500 bg-white rounded-lg border px-4 py-2.5">
+        <span :class="recording ? 'w-2.5 h-2.5 bg-red-500 rounded-full animate-pulse' : 'w-2.5 h-2.5 bg-gray-300 rounded-full'"></span>
+        <span x-text="recording ? 'Recording & streaming to Gemini...' : 'Ready — click Record to start'"></span>
+        <span class="ml-auto font-mono text-xs" x-text="elapsed"></span>
+    </div>
+
+    <!-- Notes area -->
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+
+        <!-- Structured Notes -->
+        <div class="lg:col-span-2 bg-white rounded-xl border p-5 min-h-[400px]">
+            <h2 class="text-sm font-semibold text-gray-400 uppercase tracking-wide mb-3">Notes</h2>
+            <div class="space-y-3">
+                <template x-for="note in notes" :key="note.id">
+                    <div class="p-3 bg-gray-50 rounded-lg border-l-4" :class="note.type === 'flag' ? 'border-l-yellow-400' : 'border-l-brand-500'">
+                        <div class="flex justify-between items-start">
+                            <p class="text-sm text-gray-800" x-text="note.text"></p>
+                            <span class="text-xs text-gray-400 font-mono shrink-0 ml-2" x-text="note.timestamp"></span>
+                        </div>
+                    </div>
+                </template>
+                <p x-show="notes.length === 0" class="text-gray-400 text-sm italic py-8 text-center">
+                    Notes will appear here once you start recording...
+                </p>
+            </div>
+        </div>
+
+        <!-- Flags sidebar -->
+        <div class="bg-white rounded-xl border p-5 min-h-[400px]">
+            <h2 class="text-sm font-semibold text-gray-400 uppercase tracking-wide mb-3">⚠️ Concepts to Review</h2>
+            <div class="space-y-2">
+                <template x-for="flag in flags" :key="flag.id">
+                    <div class="p-2.5 bg-yellow-50 rounded border border-yellow-200 text-sm text-gray-700">
+                        <span x-text="flag.text"></span>
+                    </div>
+                </template>
+                <p x-show="flags.length === 0" class="text-gray-400 text-sm italic py-8 text-center">
+                    Flagged concepts will show up here...
+                </p>
+            </div>
+        </div>
+
+    </div>
+</div>
+
+<script>
+function lectureRecorder() {
+    return {
+        recording: false,
+        ws: null,
+        notes: [],
+        flags: [],
+        elapsed: '00:00',
+        timerInterval: null,
+        seconds: 0,
+
+        toggleRecording() {
+            if (this.recording) {
+                this.stopRecording();
+            } else {
+                this.startRecording();
+            }
+        },
+
+        startRecording() {
+            // TODO (lecture branch): connect WebSocket, getUserMedia, stream audio
+            this.recording = true;
+            this.seconds = 0;
+            this.timerInterval = setInterval(() => {
+                this.seconds++;
+                const m = String(Math.floor(this.seconds / 60)).padStart(2, '0');
+                const s = String(this.seconds % 60).padStart(2, '0');
+                this.elapsed = `${m}:${s}`;
+            }, 1000);
+        },
+
+        stopRecording() {
+            // TODO (lecture branch): close WebSocket, stop media tracks
+            this.recording = false;
+            clearInterval(this.timerInterval);
+            this.elapsed = '00:00';
+            this.seconds = 0;
+        }
+    };
+}
+</script>
+{% endblock %}

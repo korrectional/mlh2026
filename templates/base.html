@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}MLH Toolkit{% endblock %}</title>
+
+    <!-- Tailwind CSS (CDN, no build step) -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        brand: { 50: '#f0f4ff', 500: '#3b82f6', 600: '#2563eb', 700: '#1d4ed8' }
+                    }
+                }
+            }
+        }
+    </script>
+
+    <!-- Alpine.js (reactive state, no build step) -->
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+
+    <!-- HTMX (server-driven HTML swaps, no build step) -->
+    <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+    <script src="https://unpkg.com/htmx.org@2.0.4/dist/ext/ws.js"></script>
+
+    <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body class="bg-gray-50 text-gray-900 min-h-screen">
+
+    <!-- Navigation -->
+    <nav class="bg-white border-b shadow-sm sticky top-0 z-50">
+        <div class="max-w-5xl mx-auto px-4 h-14 flex items-center justify-between">
+            <a href="/" class="text-lg font-bold text-brand-600 hover:text-brand-700 transition">
+                🧰 MLH Toolkit
+            </a>
+            <div class="flex gap-1">
+                <a href="/lecture"
+                   class="px-3 py-1.5 rounded text-sm font-medium hover:bg-gray-100 transition text-gray-600">
+                    🎙️ Lecture
+                </a>
+                <a href="/study-buddy"
+                   class="px-3 py-1.5 rounded text-sm font-medium hover:bg-gray-100 transition text-gray-600">
+                    📄 Study Buddy
+                </a>
+                <a href="/dashboard"
+                   class="px-3 py-1.5 rounded text-sm font-medium hover:bg-gray-100 transition text-gray-600">
+                    📋 Dashboard
+                </a>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Page Content -->
+    <main class="max-w-5xl mx-auto px-4 py-8">
+        {% block content %}{% endblock %}
+    </main>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>

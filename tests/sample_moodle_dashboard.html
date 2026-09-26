@@ -1,0 +1,164 @@
+<!--
+Sample NCSU Moodle Dashboard HTML
+Copy this into the Dashboard Inspector for testing, or use it as a reference
+for what real Moodle HTML looks like.
+
+To get YOUR actual dashboard:
+  1. Log into https://wolfware.ncsu.edu
+  2. Click Dashboard
+  3. Open DevTools (F12) → Elements tab
+  4. Right-click <body> → Copy → Copy OuterHTML
+  5. Paste into the Dashboard Inspector
+-->
+<!DOCTYPE html>
+<html>
+<body>
+    <div id="page-wrapper">
+        <div id="page">
+            <div id="region-main">
+                <div class="card">
+                    <div class="card-body">
+
+                        <!-- ===== TIMELINE HEADER ===== -->
+                        <div class="d-flex justify-content-between align-items-center mb-3">
+                            <h3>Timeline</h3>
+                            <div class="btn-group btn-group-toggle" data-toggle="buttons">
+                                <label class="btn btn-outline-secondary active">Sort by date</label>
+                                <label class="btn btn-outline-secondary">Sort by course</label>
+                            </div>
+                        </div>
+
+                        <!-- ===== EVENT LIST ===== -->
+                        <div data-region="event-list-container">
+                            <div data-region="event-list-content">
+                                <div data-region="event-list-wrapper">
+
+                                    <!-- Assignment 1: Due tomorrow -->
+                                    <div class="list-group-item timeline-event-list-item flex-column pt-2 pb-0 border-0 px-2"
+                                         data-region="event-list-item">
+                                        <div class="d-flex flex-wrap pb-1">
+                                            <div class="d-flex mr-auto pb-1 mw-100 timeline-name">
+                                                <small class="text-right text-nowrap align-self-center ml-1">11:59 PM</small>
+                                                <div class="activityiconcontainer small assessment courseicon align-self-top align-self-center mx-3 mb-1 mb-sm-0 text-nowrap">
+                                                    <img alt="" src="https://wolfware.ncsu.edu/theme/image.php/boost/core/1738700000/i/assign" class="icon">
+                                                </div>
+                                                <div class="event-name-container flex-grow-1 line-height-3 nowrap text-truncate">
+                                                    <div class="d-flex">
+                                                        <h6 class="event-name mb-0 pb-1 text-truncate">
+                                                            <a href="https://wolfware.ncsu.edu/mod/assign/view.php?id=5001"
+                                                               title="Programming Assignment 4 - Binary Search Trees">
+                                                                Programming Assignment 4 - Binary Search Trees</a>
+                                                        </h6>
+                                                    </div>
+                                                    <small class="mb-0">
+                                                        Assignment is due · CSC 316 - Data Structures
+                                                    </small>
+                                                </div>
+                                            </div>
+                                            <div class="d-flex timeline-action-button">
+                                                <h6 class="event-action">
+                                                    <a class="list-group-item-action btn btn-outline-secondary btn-sm text-nowrap"
+                                                       href="https://wolfware.ncsu.edu/mod/assign/view.php?id=5001">
+                                                    Add submission
+                                                    </a>
+                                                </h6>
+                                            </div>
+                                        </div>
+                                        <div class="pt-2 border-bottom"></div>
+                                    </div>
+
+                                    <!-- Assignment 2: Overdue! -->
+                                    <div class="list-group-item timeline-event-list-item flex-column pt-2 pb-0 border-0 px-2"
+                                         data-region="event-list-item">
+                                        <div class="d-flex flex-wrap pb-1">
+                                            <div class="d-flex mr-auto pb-1 mw-100 timeline-name">
+                                                <small class="text-right text-nowrap align-self-center ml-1">11:59 PM</small>
+                                                <div class="activityiconcontainer small assessment courseicon align-self-top align-self-center mx-3 mb-1 mb-sm-0 text-nowrap">
+                                                    <img alt="" src="https://wolfware.ncsu.edu/theme/image.php/boost/core/1738700000/i/assign" class="icon">
+                                                </div>
+                                                <div class="event-name-container flex-grow-1 line-height-3 nowrap text-truncate">
+                                                    <div class="d-flex">
+                                                        <h6 class="event-name mb-0 pb-1 text-truncate">
+                                                            <span class="badge badge-pill badge-danger">Overdue</span>
+                                                            <a href="https://wolfware.ncsu.edu/mod/assign/view.php?id=5002"
+                                                               title="Lab Report 3 - Acid-Base Titration">
+                                                                Lab Report 3 - Acid-Base Titration</a>
+                                                        </h6>
+                                                    </div>
+                                                    <small class="mb-0">
+                                                        Assignment is due · CH 102 - General Chemistry
+                                                    </small>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div class="pt-2 border-bottom"></div>
+                                    </div>
+
+                                    <!-- Assignment 3: Quiz -->
+                                    <div class="list-group-item timeline-event-list-item flex-column pt-2 pb-0 border-0 px-2"
+                                         data-region="event-list-item">
+                                        <div class="d-flex flex-wrap pb-1">
+                                            <div class="d-flex mr-auto pb-1 mw-100 timeline-name">
+                                                <small class="text-right text-nowrap align-self-center ml-1">8:00 AM</small>
+                                                <div class="activityiconcontainer small assessment courseicon align-self-top align-self-center mx-3 mb-1 mb-sm-0 text-nowrap">
+                                                    <img alt="" src="https://wolfware.ncsu.edu/theme/image.php/boost/core/1738700000/i/quiz" class="icon">
+                                                </div>
+                                                <div class="event-name-container flex-grow-1 line-height-3 nowrap text-truncate">
+                                                    <div class="d-flex">
+                                                        <h6 class="event-name mb-0 pb-1 text-truncate">
+                                                            <a href="https://wolfware.ncsu.edu/mod/quiz/view.php?id=5003"
+                                                               title="Quiz 4 - Integration Techniques">
+                                                                Quiz 4 - Integration Techniques</a>
+                                                        </h6>
+                                                    </div>
+                                                    <small class="mb-0">
+                                                        Quiz closes · MA 242 - Calculus III
+                                                    </small>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div class="pt-2 border-bottom"></div>
+                                    </div>
+
+                                    <!-- Assignment 4: Due in 5 days -->
+                                    <div class="list-group-item timeline-event-list-item flex-column pt-2 pb-0 border-0 px-2"
+                                         data-region="event-list-item">
+                                        <div class="d-flex flex-wrap pb-1">
+                                            <div class="d-flex mr-auto pb-1 mw-100 timeline-name">
+                                                <small class="text-right text-nowrap align-self-center ml-1">11:59 PM</small>
+                                                <div class="activityiconcontainer small assessment courseicon align-self-top align-self-center mx-3 mb-1 mb-sm-0 text-nowrap">
+                                                    <img alt="" src="https://wolfware.ncsu.edu/theme/image.php/boost/core/1738700000/i/assign" class="icon">
+                                                </div>
+                                                <div class="event-name-container flex-grow-1 line-height-3 nowrap text-truncate">
+                                                    <div class="d-flex">
+                                                        <h6 class="event-name mb-0 pb-1 text-truncate">
+                                                            <a href="https://wolfware.ncsu.edu/mod/assign/view.php?id=5004"
+                                                               title="Essay 2 - The Role of AI in Education">
+                                                                Essay 2 - The Role of AI in Education</a>
+                                                        </h6>
+                                                    </div>
+                                                    <small class="mb-0">
+                                                        Assignment is due · ENG 331 - Communication for Engineering
+                                                    </small>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div class="pt-2 border-bottom"></div>
+                                    </div>
+
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- ===== LOAD MORE ===== -->
+                        <div class="mt-3 text-center">
+                            <button class="btn btn-link" data-action="more-events">Show more events</button>
+                        </div>
+
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>
