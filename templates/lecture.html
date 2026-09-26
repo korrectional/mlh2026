@@ -9,57 +9,206 @@
     <div class="flex items-center justify-between">
         <div>
             <h1 class="text-2xl font-bold">🎙️ Live Lecture Note-Taker</h1>
-            <p class="text-sm text-gray-500">Record a lecture or class. Notes and flagged concepts appear in real time.</p>
+            <p class="text-sm text-gray-500">Record a lecture to generate full transcripts, AI study notes, and MP3 audio.</p>
         </div>
-        <div class="flex gap-2">
-            <button @click="toggleRecording"
+        <div class="flex items-center gap-2">
+            <button type="button" @click="toggleRecording" :disabled="starting || downloading"
                     :class="recording ? 'bg-red-600 hover:bg-red-700' : 'bg-brand-600 hover:bg-brand-700'"
-                    class="px-5 py-2.5 rounded-lg text-white font-medium text-sm transition flex items-center gap-2">
-                <span x-text="recording ? '⏹ Stop' : '🎤 Record'"></span>
+                    class="px-5 py-2.5 rounded-lg text-white font-medium text-sm transition flex items-center gap-2 disabled:opacity-50 shadow-sm">
+                <span x-text="starting ? status : recording ? '⏹ Stop' : '🎤 Record'"></span>
             </button>
+
+            <!-- Split Download Button -->
+            <div x-show="recordingAvailable && !recording" class="relative inline-flex rounded-lg shadow-sm"
+                 @click.outside="downloadDropdownOpen = false">
+                <!-- Default Button: Download Notes -->
+                <button type="button" @click="downloadDefaultNotes()"
+                        :disabled="notesLoading || !notes"
+                        class="px-4 py-2.5 rounded-l-lg bg-white border border-gray-300 text-gray-700 hover:bg-gray-50 font-medium text-sm transition flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed">
+                    <span>📥</span>
+                    <span x-text="notesLoading ? 'Notes Generating...' : 'Download Notes'"></span>
+                </button>
+
+                <!-- Dropdown Trigger Button -->
+                <button type="button" @click="downloadDropdownOpen = !downloadDropdownOpen"
+                        class="px-2.5 py-2.5 rounded-r-lg bg-white border-t border-r border-b border-gray-300 text-gray-600 hover:bg-gray-50 font-medium text-sm transition -ml-px hover:text-gray-900 focus:outline-none"
+                        title="Download options">
+                    <svg class="w-4 h-4 transition-transform duration-200" :class="downloadDropdownOpen ? 'rotate-180' : ''"
+                         fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+                    </svg>
+                </button>
+
+                <!-- Dropdown Menu -->
+                <div x-show="downloadDropdownOpen"
+                     x-transition:enter="transition ease-out duration-100"
+                     x-transition:enter-start="transform opacity-0 scale-95"
+                     x-transition:enter-end="transform opacity-100 scale-100"
+                     x-transition:leave="transition ease-in duration-75"
+                     x-transition:leave-start="transform opacity-100 scale-100"
+                     x-transition:leave-end="transform opacity-0 scale-95"
+                     class="absolute right-0 top-full mt-2 w-72 rounded-xl bg-white shadow-xl border border-gray-200 p-4 z-50 text-sm"
+                     style="display: none;">
+
+                    <div class="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1">
+                        Download Options
+                    </div>
+                    <p class="text-xs text-gray-500 mb-3">
+                        Choose any combination of lecture materials:
+                    </p>
+
+                    <!-- Combination Checkboxes -->
+                    <div class="space-y-1.5 mb-3">
+                        <label class="flex items-center gap-2.5 p-2 rounded-lg hover:bg-gray-50 cursor-pointer border border-transparent hover:border-gray-200 transition">
+                            <input type="checkbox" x-model="exportOptions.notes" class="rounded text-brand-600 focus:ring-brand-500 w-4 h-4">
+                            <div class="flex-1 min-w-0">
+                                <span class="font-medium text-gray-800 text-xs block">📝 Lecture Notes</span>
+                                <span class="text-[11px] text-gray-400 block" x-text="notes ? 'Ready' : notesLoading ? 'Generating...' : 'Not available'"></span>
+                            </div>
+                        </label>
+
+                        <label class="flex items-center gap-2.5 p-2 rounded-lg hover:bg-gray-50 cursor-pointer border border-transparent hover:border-gray-200 transition">
+                            <input type="checkbox" x-model="exportOptions.transcript" class="rounded text-brand-600 focus:ring-brand-500 w-4 h-4">
+                            <div class="flex-1 min-w-0">
+                                <span class="font-medium text-gray-800 text-xs block">🎙️ Transcript</span>
+                                <span class="text-[11px] text-gray-400 block" x-text="transcript.length > 0 ? 'Ready' : transcriptionLoading ? 'Transcribing...' : 'Not available'"></span>
+                            </div>
+                        </label>
+
+                        <label class="flex items-center gap-2.5 p-2 rounded-lg hover:bg-gray-50 cursor-pointer border border-transparent hover:border-gray-200 transition">
+                            <input type="checkbox" x-model="exportOptions.concepts" class="rounded text-brand-600 focus:ring-brand-500 w-4 h-4">
+                            <div class="flex-1 min-w-0">
+                                <span class="font-medium text-gray-800 text-xs block">⚠️ Concepts to Review</span>
+                                <span class="text-[11px] text-gray-400 block" x-text="concepts.length > 0 ? (concepts.length + ' items') : notesLoading ? 'Analyzing...' : 'Not available'"></span>
+                            </div>
+                        </label>
+                    </div>
+
+                    <!-- Download Selected Action -->
+                    <button type="button" @click="downloadCombined(); downloadDropdownOpen = false;"
+                            :disabled="!exportOptions.notes && !exportOptions.transcript && !exportOptions.concepts"
+                            class="w-full py-2 px-3 bg-brand-600 hover:bg-brand-700 disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-medium rounded-lg transition text-center shadow-sm">
+                        📥 Download Selected (.md)
+                    </button>
+
+                    <!-- Divider -->
+                    <div class="border-t border-gray-100 my-3"></div>
+
+                    <!-- Audio Recording Link -->
+                    <button type="button" @click="downloadRecording(); downloadDropdownOpen = false;"
+                            :disabled="downloading"
+                            class="w-full text-left py-2 px-2.5 rounded-lg hover:bg-gray-50 text-xs text-gray-700 flex items-center justify-between transition disabled:opacity-50">
+                        <span class="flex items-center gap-1.5 font-medium">
+                            <span>🎵</span>
+                            <span>Audio Recording (.mp3)</span>
+                        </span>
+                        <span class="text-[10px] text-gray-400 font-mono" x-text="downloading ? 'Downloading...' : 'MP3'"></span>
+                    </button>
+                </div>
+            </div>
         </div>
     </div>
 
     <!-- Status bar -->
-    <div class="flex items-center gap-3 text-sm text-gray-500 bg-white rounded-lg border px-4 py-2.5">
+    <div class="flex items-center gap-3 text-sm text-gray-500 bg-white rounded-lg border px-4 py-2.5" role="status" aria-live="polite">
         <span :class="recording ? 'w-2.5 h-2.5 bg-red-500 rounded-full animate-pulse' : 'w-2.5 h-2.5 bg-gray-300 rounded-full'"></span>
-        <span x-text="recording ? 'Recording & streaming to Gemini...' : 'Ready — click Record to start'"></span>
+        <span x-text="status"></span>
         <span class="ml-auto font-mono text-xs" x-text="elapsed"></span>
     </div>
 
+    <p class="text-sm text-blue-800 bg-blue-50 border border-blue-200 rounded-lg px-4 py-3">
+        Record your lecture audio. After you stop recording, the server transcribes the full audio, generates structured notes, and prepares your MP3 download.
+    </p>
+
+    <p x-show="transcriptionError" x-text="transcriptionError" role="alert"
+       class="text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg px-4 py-3"></p>
+
+    <p class="text-sm text-gray-500" x-show="recording || receivedChunks > 0">
+        Server received <span class="font-medium" x-text="receivedChunks"></span> chunks
+        (<span class="font-medium" x-text="(receivedBytes / 1024).toFixed(1)"></span> KB).
+    </p>
+
     <!-- Notes area -->
-    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
 
         <!-- Structured Notes -->
-        <div class="lg:col-span-2 bg-white rounded-xl border p-5 min-h-[400px]">
+        <div class="bg-white rounded-xl border p-5 min-h-[400px]">
             <h2 class="text-sm font-semibold text-gray-400 uppercase tracking-wide mb-3">Notes</h2>
-            <div class="space-y-3">
-                <template x-for="note in notes" :key="note.id">
-                    <div class="p-3 bg-gray-50 rounded-lg border-l-4" :class="note.type === 'flag' ? 'border-l-yellow-400' : 'border-l-brand-500'">
-                        <div class="flex justify-between items-start">
-                            <p class="text-sm text-gray-800" x-text="note.text"></p>
-                            <span class="text-xs text-gray-400 font-mono shrink-0 ml-2" x-text="note.timestamp"></span>
-                        </div>
-                    </div>
+            <p x-show="notesLoading" class="text-sm text-gray-500 italic py-8 text-center">Generating notes with Gemini...</p>
+            <p x-show="notesError" x-text="notesError" role="alert" class="text-sm text-red-700 bg-red-50 rounded-lg p-3"></p>
+            <p x-show="notes" x-text="notes" class="text-sm text-gray-800 leading-relaxed whitespace-pre-wrap"></p>
+            <p x-show="!notes && !notesLoading && !notesError" class="text-gray-400 text-sm italic py-8 text-center">
+                Notes will appear here after you stop recording.
+            </p>
+        </div>
+
+        <!-- Transcript -->
+        <div class="bg-white rounded-xl border p-5 min-h-[400px]">
+            <h2 class="text-sm font-semibold text-gray-400 uppercase tracking-wide mb-3">Transcript</h2>
+            <p x-show="transcriptionLoading" class="text-sm text-gray-500 italic py-8 text-center">Transcribing full lecture audio...</p>
+            <div class="space-y-3" aria-live="polite" x-show="!transcriptionLoading">
+                <template x-for="(entry, index) in transcript" :key="index">
+                    <p class="p-3 bg-gray-50 rounded-lg border-l-4 border-l-brand-500 text-sm text-gray-800 leading-relaxed" x-text="entry"></p>
                 </template>
-                <p x-show="notes.length === 0" class="text-gray-400 text-sm italic py-8 text-center">
-                    Notes will appear here once you start recording...
+                <p x-show="transcript.length === 0 && !transcriptionLoading && !transcriptionError" class="text-gray-400 text-sm italic py-8 text-center">
+                    Transcript will appear here after you stop recording.
                 </p>
+                <p x-show="transcriptionStatus" x-text="transcriptionStatus" class="text-xs text-gray-500"></p>
             </div>
         </div>
 
-        <!-- Flags sidebar -->
-        <div class="bg-white rounded-xl border p-5 min-h-[400px]">
-            <h2 class="text-sm font-semibold text-gray-400 uppercase tracking-wide mb-3">⚠️ Concepts to Review</h2>
-            <div class="space-y-2">
-                <template x-for="flag in flags" :key="flag.id">
-                    <div class="p-2.5 bg-yellow-50 rounded border border-yellow-200 text-sm text-gray-700">
-                        <span x-text="flag.text"></span>
+        <!-- Flags sidebar / Concepts to Review -->
+        <div class="lg:col-span-2 bg-white rounded-xl border p-5">
+            <div class="flex items-center justify-between mb-4">
+                <div class="flex items-center gap-2">
+                    <h2 class="text-sm font-semibold text-gray-500 uppercase tracking-wide">⚠️ Concepts to Review</h2>
+                    <span x-show="concepts.length > 0" x-text="concepts.length"
+                          class="px-2 py-0.5 rounded-full text-xs font-semibold bg-amber-100 text-amber-800"></span>
+                </div>
+            </div>
+
+            <!-- Loading state -->
+            <div x-show="notesLoading" class="py-8 text-center">
+                <div class="inline-block w-6 h-6 border-2 border-amber-300 border-t-amber-600 rounded-full animate-spin mb-2"></div>
+                <p class="text-sm text-gray-500 italic">Analyzing lecture for concepts to review...</p>
+            </div>
+
+            <!-- Empty / initial state -->
+            <p x-show="!notesLoading && concepts.length === 0 && !notes" class="text-gray-400 text-sm italic py-8 text-center">
+                Concepts flagged for review will appear here after AI notes are generated.
+            </p>
+
+            <!-- No difficult concepts found state -->
+            <p x-show="!notesLoading && concepts.length === 0 && notes" class="text-gray-500 text-sm italic py-4 text-center bg-gray-50 rounded-lg border">
+                ✅ No specific review flags detected — material appears straightforward.
+            </p>
+
+            <!-- Concepts cards list -->
+            <div x-show="concepts.length > 0" class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <template x-for="(item, idx) in concepts" :key="idx">
+                    <div class="p-4 rounded-xl border border-amber-200 bg-amber-50/50 hover:bg-amber-50 transition space-y-2">
+                        <div class="flex items-start justify-between gap-2">
+                            <h3 class="font-semibold text-gray-900 text-sm flex items-center gap-1.5">
+                                <span class="text-amber-600 font-bold">📌</span>
+                                <span x-text="item.concept"></span>
+                            </h3>
+                            <span class="px-2 py-0.5 rounded text-[11px] font-medium bg-amber-100 text-amber-800 whitespace-nowrap">
+                                Review Focus
+                            </span>
+                        </div>
+                        <p x-show="item.reason" class="text-xs text-gray-700 leading-relaxed">
+                            <strong class="font-medium text-amber-900">Why review:</strong>
+                            <span x-text="item.reason"></span>
+                        </p>
+                        <div x-show="item.tip" class="p-2.5 bg-white/90 rounded-lg border border-amber-100 text-xs text-gray-600 flex items-start gap-2">
+                            <span class="text-amber-500 font-bold">💡</span>
+                            <div>
+                                <span class="font-medium text-gray-800">Study Tip:</span>
+                                <span x-text="item.tip"></span>
+                            </div>
+                        </div>
                     </div>
                 </template>
-                <p x-show="flags.length === 0" class="text-gray-400 text-sm italic py-8 text-center">
-                    Flagged concepts will show up here...
-                </p>
             </div>
         </div>
 
@@ -70,9 +219,38 @@
 function lectureRecorder() {
     return {
         recording: false,
+        starting: false,
+        status: 'Ready — click Record to start',
         ws: null,
-        notes: [],
-        flags: [],
+        connectionLost: false,
+        recordingAvailable: false,
+        sentAudio: false,
+        downloading: false,
+        downloadChunks: [],
+        expectedDownloadBytes: 0,
+        receivedChunks: 0,
+        receivedBytes: 0,
+        transcript: [],
+        transcriptionLoading: false,
+        transcriptionError: '',
+        transcriptionStatus: '',
+        notes: '',
+        notesLoading: false,
+        notesError: '',
+        concepts: [],
+        downloadDropdownOpen: false,
+        exportOptions: {
+            notes: true,
+            transcript: true,
+            concepts: true
+        },
+        stream: null,
+        audioContext: null,
+        source: null,
+        processor: null,
+        muteGain: null,
+        resampleBuffer: [],
+        resamplePosition: 0,
         elapsed: '00:00',
         timerInterval: null,
         seconds: 0,
@@ -85,24 +263,309 @@ function lectureRecorder() {
             }
         },
 
-        startRecording() {
-            // TODO (lecture branch): connect WebSocket, getUserMedia, stream audio
-            this.recording = true;
-            this.seconds = 0;
-            this.timerInterval = setInterval(() => {
-                this.seconds++;
-                const m = String(Math.floor(this.seconds / 60)).padStart(2, '0');
-                const s = String(this.seconds % 60).padStart(2, '0');
-                this.elapsed = `${m}:${s}`;
-            }, 1000);
+        async startRecording() {
+            if (this.starting || this.recording || this.downloading) return;
+            const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+            if (!navigator.mediaDevices?.getUserMedia || !AudioContextClass) {
+                this.status = 'This browser does not support microphone recording.';
+                return;
+            }
+
+            this.starting = true;
+            this.status = 'Connecting to local server...';
+            try {
+                this.recordingAvailable = false;
+                this.ws?.close();
+                this.ws = createWebSocket('/lecture/ws');
+                const socket = this.ws;
+                await new Promise((resolve, reject) => {
+                    socket.onopen = resolve;
+                    socket.onerror = () => reject(new Error('WebSocket connection failed'));
+                    socket.onclose = () => reject(new Error('WebSocket connection closed'));
+                });
+                socket.binaryType = 'arraybuffer';
+                socket.onmessage = (event) => {
+                    if (this.ws !== socket) return;
+                    if (event.data instanceof ArrayBuffer) {
+                        if (this.downloading) this.downloadChunks.push(event.data);
+                        return;
+                    }
+                    const message = JSON.parse(event.data);
+                    if (message.type === 'audio_received') {
+                        this.receivedChunks = message.chunks;
+                        this.receivedBytes = message.total_bytes;
+                    } else if (message.type === 'transcript') {
+                        if (Array.isArray(message.text)) {
+                            this.transcript = message.text;
+                        } else if (typeof message.text === 'string') {
+                            const parts = message.text.split('\n\n').map(s => s.trim()).filter(Boolean);
+                            this.transcript = parts.length > 0 ? parts : [message.text];
+                        }
+                        this.transcriptionLoading = false;
+                        this.transcriptionStatus = '';
+                    } else if (message.type === 'transcription_error') {
+                        this.transcriptionError = message.message;
+                        this.transcriptionLoading = false;
+                    } else if (message.type === 'transcription_status') {
+                        this.transcriptionStatus = message.message;
+                    } else if (message.type === 'recording_stopped') {
+                        this.starting = false;
+                        this.recordingAvailable = this.sentAudio;
+                        this.status = this.recordingAvailable ? 'Processing recording. MP3 ready for download.' : 'No audio was captured.';
+                    } else if (message.type === 'notes') {
+                        this.notes = message.text;
+                        this.notesLoading = false;
+                        if (Array.isArray(message.concepts)) {
+                            this.concepts = message.concepts;
+                        }
+                    } else if (message.type === 'concepts') {
+                        if (Array.isArray(message.items)) {
+                            this.concepts = message.items;
+                        }
+                    } else if (message.type === 'notes_error') {
+                        this.notesError = message.message;
+                        this.notesLoading = false;
+                    } else if (message.type === 'download_started') {
+                        this.expectedDownloadBytes = message.total_bytes;
+                        this.downloadChunks = [];
+                    } else if (message.type === 'download_complete') {
+                        const size = this.downloadChunks.reduce((total, chunk) => total + chunk.byteLength, 0);
+                        if (size === this.expectedDownloadBytes && size > 0) {
+                            downloadBlob(new Blob(this.downloadChunks, { type: 'audio/mpeg' }), 'lecture-recording.mp3');
+                            this.status = 'Recording downloaded.';
+                        } else {
+                            this.status = 'Audio transfer was incomplete. Try again.';
+                        }
+                        this.downloadChunks = [];
+                        this.downloading = false;
+                    } else if (message.type === 'download_error') {
+                        this.status = message.message;
+                        this.downloadChunks = [];
+                        this.downloading = false;
+                    }
+                };
+                socket.onclose = () => {
+                    if (this.ws !== socket) return;
+                    if (this.recording) {
+                        this.connectionLost = true;
+                        this.stopRecording();
+                    } else if (this.recordingAvailable || this.downloading || this.starting) {
+                        this.recordingAvailable = false;
+                        this.downloading = false;
+                        this.downloadChunks = [];
+                        if (this.notesLoading) {
+                            this.notesLoading = false;
+                            this.notesError = 'Connection lost before notes could be generated.';
+                        }
+                        if (this.transcriptionLoading) {
+                            this.transcriptionLoading = false;
+                            this.transcriptionError = 'Connection lost before transcription could be completed.';
+                        }
+                        this.status = 'Server connection lost. Recording unavailable for download.';
+                        this.starting = false;
+                    } else if (this.notesLoading) {
+                        this.notesLoading = false;
+                        this.notesError = 'Connection lost before notes could be generated.';
+                    } else if (this.transcriptionLoading) {
+                        this.transcriptionLoading = false;
+                        this.transcriptionError = 'Connection lost before transcription could be completed.';
+                    }
+                };
+
+                socket.send(JSON.stringify({ type: 'start', sample_rate: 16000 }));
+                this.status = 'Opening microphone...';
+                this.stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1 } });
+                if (socket.readyState !== WebSocket.OPEN) {
+                    throw new Error('WebSocket connection closed');
+                }
+                this.audioContext = new AudioContextClass();
+                this.source = this.audioContext.createMediaStreamSource(this.stream);
+                this.processor = this.audioContext.createScriptProcessor(4096, 1, 1);
+                this.resampleBuffer = [];
+                this.resamplePosition = 0;
+                this.processor.onaudioprocess = (event) => {
+                    if (!this.recording || socket.readyState !== WebSocket.OPEN) return;
+                    if (socket.bufferedAmount > 4 * 1024 * 1024) {
+                        this.stopRecording();
+                        this.status = 'Audio stream fell behind; finishing the recording.';
+                        return;
+                    }
+                    const input = event.inputBuffer.getChannelData(0);
+                    for (let i = 0; i < input.length; i++) this.resampleBuffer.push(input[i]);
+                    const step = this.audioContext.sampleRate / 16000;
+                    const samples = [];
+                    while (this.resamplePosition + 1 < this.resampleBuffer.length) {
+                        const index = Math.floor(this.resamplePosition);
+                        const fraction = this.resamplePosition - index;
+                        samples.push(this.resampleBuffer[index] * (1 - fraction) + this.resampleBuffer[index + 1] * fraction);
+                        this.resamplePosition += step;
+                    }
+                    const consumed = Math.min(Math.floor(this.resamplePosition), this.resampleBuffer.length - 1);
+                    this.resampleBuffer = this.resampleBuffer.slice(consumed);
+                    this.resamplePosition -= consumed;
+                    if (!samples.length) return;
+                    const pcm = new ArrayBuffer(samples.length * 2);
+                    const view = new DataView(pcm);
+                    samples.forEach((value, index) => {
+                        const sample = Math.max(-1, Math.min(1, value));
+                        view.setInt16(index * 2, sample < 0 ? sample * 0x8000 : sample * 0x7fff, true);
+                    });
+                    socket.send(pcm);
+                    this.sentAudio = true;
+                };
+                this.muteGain = this.audioContext.createGain();
+                this.muteGain.gain.value = 0;
+                this.source.connect(this.processor);
+                this.processor.connect(this.muteGain);
+                this.muteGain.connect(this.audioContext.destination);
+                await this.audioContext.resume();
+                if (this.ws !== socket || socket.readyState !== WebSocket.OPEN) throw new Error('WebSocket connection closed');
+                this.recordingAvailable = false;
+                this.sentAudio = false;
+                this.downloadChunks = [];
+                this.connectionLost = false;
+                this.transcriptionError = '';
+                this.transcriptionStatus = '';
+                this.transcript = [];
+                this.notes = '';
+                this.concepts = [];
+                this.notesError = '';
+                this.notesLoading = false;
+                this.receivedChunks = 0;
+                this.receivedBytes = 0;
+                this.recording = true;
+                this.status = 'Recording — click Stop when finished';
+                this.seconds = 0;
+                this.elapsed = '00:00';
+                this.timerInterval = setInterval(() => {
+                    this.seconds++;
+                    this.elapsed = formatTimestamp(this.seconds);
+                }, 1000);
+            } catch (error) {
+                this.releaseMicrophone();
+                this.ws?.close();
+                this.ws = null;
+                this.status = error.message.includes('WebSocket')
+                    ? 'Could not connect to the local server. Try again.'
+                    : 'Microphone unavailable. Allow access and try again.';
+            } finally {
+                this.starting = false;
+            }
         },
 
         stopRecording() {
-            // TODO (lecture branch): close WebSocket, stop media tracks
+            if (!this.recording) return;
+            this.recording = false;
+            this.starting = true;
+            clearInterval(this.timerInterval);
+            this.releaseMicrophone();
+            if (this.ws?.readyState === WebSocket.OPEN && this.sentAudio) {
+                this.status = 'Processing full audio for transcript and notes...';
+                this.notesLoading = true;
+                this.transcriptionLoading = true;
+                this.notesError = '';
+                this.transcriptionError = '';
+                this.transcript = [];
+                this.notes = '';
+                this.concepts = [];
+                this.ws.send(JSON.stringify({ type: 'stop' }));
+            } else {
+                this.ws?.close();
+                this.notesLoading = false;
+                this.transcriptionLoading = false;
+                this.status = this.connectionLost ? 'Server connection lost.' : 'No audio was captured.';
+                this.starting = false;
+            }
+        },
+
+        downloadDefaultNotes() {
+            if (!this.notes) {
+                alert('Notes are not available yet.');
+                return;
+            }
+            const dateStr = new Date().toLocaleDateString(undefined, {
+                year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
+            });
+            const content = `# Lecture Notes\n\n*Generated: ${dateStr}*\n\n---\n\n${this.notes}\n`;
+            downloadBlob(new Blob([content], { type: 'text/markdown;charset=utf-8' }), 'lecture-notes.md');
+            this.status = 'Notes downloaded.';
+        },
+
+        downloadCombined() {
+            const parts = [];
+            const dateStr = new Date().toLocaleDateString(undefined, {
+                year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
+            });
+            parts.push(`# Lecture Materials & Study Guide\n*Exported: ${dateStr}*\n`);
+
+            if (this.exportOptions.notes) {
+                parts.push(`---\n\n## 📝 Structured Notes\n\n${this.notes || '_No notes available._'}\n`);
+            }
+
+            if (this.exportOptions.concepts) {
+                parts.push(`---\n\n## ⚠️ Concepts to Review\n`);
+                if (this.concepts && this.concepts.length > 0) {
+                    this.concepts.forEach((c, i) => {
+                        parts.push(`### ${i + 1}. ${c.concept}\n- **Why Review:** ${c.reason}\n- **Study Tip:** ${c.tip}\n`);
+                    });
+                } else {
+                    parts.push(`_No specific review concepts flagged._\n`);
+                }
+            }
+
+            if (this.exportOptions.transcript) {
+                parts.push(`---\n\n## 🎙️ Transcript\n`);
+                if (this.transcript && this.transcript.length > 0) {
+                    parts.push(this.transcript.join('\n\n') + '\n');
+                } else {
+                    parts.push(`_No transcript available._\n`);
+                }
+            }
+
+            if (!this.exportOptions.notes && !this.exportOptions.transcript && !this.exportOptions.concepts) {
+                alert('Please select at least one option to download.');
+                return;
+            }
+
+            const filename = (this.exportOptions.notes && !this.exportOptions.transcript && !this.exportOptions.concepts)
+                ? 'lecture-notes.md'
+                : (!this.exportOptions.notes && this.exportOptions.transcript && !this.exportOptions.concepts)
+                ? 'lecture-transcript.md'
+                : (!this.exportOptions.notes && !this.exportOptions.transcript && this.exportOptions.concepts)
+                ? 'lecture-concepts-to-review.md'
+                : 'lecture-study-materials.md';
+
+            downloadBlob(new Blob([parts.join('\n')], { type: 'text/markdown;charset=utf-8' }), filename);
+            this.status = 'Selected materials downloaded.';
+        },
+
+        downloadRecording() {
+            if (!this.recordingAvailable || this.downloading || this.ws?.readyState !== WebSocket.OPEN) return;
+            this.downloading = true;
+            this.downloadChunks = [];
+            this.status = 'Retrieving audio from server...';
+            this.ws.send(JSON.stringify({ type: 'download_audio' }));
+        },
+
+        releaseMicrophone() {
+            if (this.processor) this.processor.onaudioprocess = null;
+            this.source?.disconnect();
+            this.processor?.disconnect();
+            this.muteGain?.disconnect();
+            this.source = null;
+            this.processor = null;
+            this.muteGain = null;
+            this.audioContext?.close();
+            this.audioContext = null;
+            this.stream?.getTracks().forEach(track => track.stop());
+            this.stream = null;
+        },
+
+        destroy() {
             this.recording = false;
             clearInterval(this.timerInterval);
-            this.elapsed = '00:00';
-            this.seconds = 0;
+            this.releaseMicrophone();
+            this.ws?.close();
         }
     };
 }
