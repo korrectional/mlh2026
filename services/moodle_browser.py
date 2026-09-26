@@ -6,8 +6,13 @@ Uses PyAutoGUI for keyboard simulation and pyperclip for clipboard.
 """
 
 import time
-import pyautogui
-import pyperclip
+
+try:
+    import pyautogui
+    import pyperclip
+except ImportError:  # e.g. Intel Macs on Python 3.9, where pyobjc won't build
+    pyautogui = None
+    pyperclip = None
 
 
 def _put_clipboard(text: str) -> None:
@@ -37,6 +42,8 @@ def grab_moodle_page(url: str, load_wait: int = 5) -> str:
       9. Ctrl+W       — close the tab
       10. Read clipboard → return
     """
+    if pyautogui is None or pyperclip is None:
+        raise RuntimeError("Auto-grab needs pyautogui and pyperclip, which aren't installed here. Use \"Advanced: paste HTML manually\" instead.")
     # 1. Copy URL to clipboard
     _put_clipboard(url)
     time.sleep(0.2)

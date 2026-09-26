@@ -3,15 +3,58 @@
 {% block title %}Dashboard Inspector{% endblock %}
 
 {% block content %}
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@300..700&family=Geist+Mono:wght@400..600&display=swap">
+<style>
+    /* Dark monochrome theme, scoped to this page to match Study Buddy: overrides the shared light shell without editing base.html. */
+    :root { color-scheme: dark; }
+    body.bg-gray-50 { background: #0a0a0a; color: #d4d4d4; font-family: "Geist", ui-sans-serif, system-ui, sans-serif; }
+    ::selection { background: #fafafa; color: #0a0a0a; }
+    nav.bg-white { background: rgba(10, 10, 10, 0.72); border-color: #1c1c1c; box-shadow: none; backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); }
+    nav.bg-white a { filter: grayscale(1); }
+    nav a.text-brand-600, nav a.text-brand-600:hover { color: #fafafa; }
+    nav a.text-gray-600 { color: #8a8a8a; }
+    nav a.text-gray-600:hover { color: #fafafa; background: #171717; }
+    nav a.text-gray-600[href="/dashboard"] { color: #fafafa; background: #171717; }
+    .dash-mono { font-family: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .assignment-card { transition: border-color 0.2s; }
+    .assignment-card:hover { border-color: #525252; }
+    textarea { background: #111111; }
+</style>
+<script>
+    // Page-scoped palette: the light theme's grays, white and brand blue flip to a black-and-white scale,
+    // and the status colors go gray, so this page (including HTML the router builds) matches Study Buddy.
+    (function () {
+        var mono = { 50: '#141414', 100: '#1f1f1f', 200: '#333333', 300: '#525252', 400: '#737373', 500: '#a3a3a3',
+                     600: '#d4d4d4', 700: '#e5e5e5', 800: '#fafafa', 900: '#fafafa' };
+        var cfg = window.tailwind && tailwind.config ? tailwind.config : {};
+        var theme = cfg.theme || {};
+        var extend = theme.extend || {};
+        var colors = Object.assign({}, extend.colors || {}, {
+            white: '#0a0a0a',
+            gray: { 50: '#111111', 100: '#1a1a1a', 200: '#262626', 300: '#404040', 400: '#737373', 500: '#8f8f8f',
+                    600: '#a3a3a3', 700: '#d4d4d4', 800: '#e5e5e5', 900: '#fafafa' },
+            brand: { 50: '#171717', 100: '#262626', 200: '#333333', 300: '#525252', 500: '#d4d4d4', 600: '#fafafa',
+                     700: '#e5e5e5', 800: '#fafafa' },
+            red: mono, green: mono, yellow: mono, purple: mono, blue: mono,
+        });
+        tailwind.config = Object.assign({}, cfg, { theme: Object.assign({}, theme, { extend: Object.assign({}, extend, { colors: colors }) }) });
+    })();
+</script>
 <div x-data="dashboardInspector()" class="space-y-6">
 
     <!-- Header -->
-    <div>
-        <h1 class="text-2xl font-bold">📋 Dashboard Inspector</h1>
+    <header class="space-y-4 pt-4">
+        <span class="dash-mono inline-flex items-center gap-2 rounded-full border border-gray-200 px-3 py-1 text-[11px] uppercase tracking-[0.2em] text-gray-500">
+            <span class="h-1.5 w-1.5 animate-pulse rounded-full bg-gray-900"></span>
+            Dashboard Inspector
+        </span>
+        <h1 class="text-4xl font-semibold leading-[1.05] tracking-tight text-gray-900">📋 Dashboard Inspector</h1>
         <p class="text-sm text-gray-500">
             Scans your NCSU Moodle for due-soon assignments — no copying or pasting needed.
         </p>
-    </div>
+    </header>
 
     <!-- Step 1: Confirm logged in -->
     <div x-show="!confirmed" class="bg-white rounded-xl border-2 border-brand-200 p-6 text-center">

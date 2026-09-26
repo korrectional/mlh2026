@@ -131,7 +131,7 @@ async def grab_moodle():
         cards_html = ""
         for i, a in enumerate(sorted_assignments):
             overdue_badge = (
-                '<span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800">Overdue</span>'
+                '<span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-neutral-100 text-neutral-900">Overdue</span>'
                 if a.get("overdue") else ""
             )
             due = _fmt_date(a.get("due_date", ""))
@@ -284,13 +284,19 @@ async def inspect_dashboard(dashboard_html: str = Form(...)):
     cards_html = ""
     for i, a in enumerate(sorted_assignments):
         overdue_badge = (
-            '<span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800">Overdue</span>'
+            '<span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-neutral-100 text-neutral-900">Overdue</span>'
             if a.get("overdue") else ""
         )
         due = _fmt_date(a.get("due_date", ""))
         course = a.get("course", "") or "Unknown course"
         title = a.get("title", "Untitled")
         url = a.get("url", "")
+        grab_btn = f"""<button hx-post="/dashboard/grab-instructions" hx-target="#assignment-{i} .results-area"
+                        hx-vals='{{"url": "{_escape_json(url)}", "title": "{_escape_json(title)}"}}'
+                        hx-indicator="#spinner-{i}"
+                        class="px-3 py-1.5 text-xs font-medium rounded-lg bg-purple-50 text-purple-700 hover:bg-purple-100 border border-purple-200 transition">
+                    📥 Grab Instructions
+                </button>""" if url else ""
 
         cards_html += f"""
         <div class="bg-white rounded-xl border p-5 hover:shadow-md transition assignment-card"
@@ -323,12 +329,7 @@ async def inspect_dashboard(dashboard_html: str = Form(...)):
                         class="px-3 py-1.5 text-xs font-medium rounded-lg bg-green-50 text-green-700 hover:bg-green-100 border border-green-200 transition">
                     📝 Generate Quiz
                 </button>
-                {"""<button hx-post="/dashboard/grab-instructions" hx-target="#assignment-{i} .results-area"
-                        hx-vals='{{"url": "{_escape_json(url)}", "title": "{_escape_json(title)}"}}'
-                        hx-indicator="#spinner-{i}"
-                        class="px-3 py-1.5 text-xs font-medium rounded-lg bg-purple-50 text-purple-700 hover:bg-purple-100 border border-purple-200 transition">
-                    📥 Grab Instructions
-                </button>""" if url else ""}
+                {grab_btn}
                 <div id="spinner-{i}" class="htmx-indicator">
                     <div class="w-4 h-4 border-2 border-brand-200 border-t-brand-600 rounded-full animate-spin"></div>
                 </div>
