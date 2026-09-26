@@ -9,17 +9,18 @@
     <div class="flex items-center justify-between">
         <div>
             <h1 class="text-2xl font-bold">🎙️ Live Lecture Note-Taker</h1>
-            <p class="text-sm text-gray-500">Record lecture audio in your browser and download it when you're done.</p>
+            <p class="text-sm text-gray-500">Record a lecture and follow the live transcript as you speak.</p>
         </div>
         <div class="flex gap-2">
-            <button type="button" @click="toggleRecording" :disabled="starting"
+            <button type="button" @click="toggleRecording" :disabled="starting || downloading"
                     :class="recording ? 'bg-red-600 hover:bg-red-700' : 'bg-brand-600 hover:bg-brand-700'"
                     class="px-5 py-2.5 rounded-lg text-white font-medium text-sm transition flex items-center gap-2 disabled:opacity-50">
                 <span x-text="starting ? status : recording ? '⏹ Stop' : '🎤 Record'"></span>
             </button>
-            <button type="button" x-show="lastRecording" @click="downloadRecording()"
-                    class="px-4 py-2.5 rounded-lg bg-white border text-gray-700 hover:bg-gray-100 font-medium text-sm transition">
-                Download audio
+            <button type="button" x-show="recordingAvailable && !recording" :disabled="downloading"
+                    @click="downloadRecording()"
+                    class="px-4 py-2.5 rounded-lg bg-white border text-gray-700 hover:bg-gray-100 font-medium text-sm transition disabled:opacity-50">
+                <span x-text="downloading ? 'Downloading...' : 'Download MP3'"></span>
             </button>
         </div>
     </div>
@@ -32,8 +33,11 @@
     </div>
 
     <p class="text-sm text-blue-800 bg-blue-50 border border-blue-200 rounded-lg px-4 py-3">
-        Audio chunks stream to the local server as you record. You can still download the recording afterward. Live transcription and AI notes are coming soon.
+        One microphone stream is transcribed locally and stored on this server. Stop recording to download it as an MP3. The first recording may take a moment while the speech model loads.
     </p>
+
+    <p x-show="transcriptionError" x-text="transcriptionError" role="alert"
+       class="text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg px-4 py-3"></p>
 
     <p class="text-sm text-gray-500" x-show="recording || receivedChunks > 0">
         Server received <span class="font-medium" x-text="receivedChunks"></span> chunks
@@ -41,16 +45,30 @@
     </p>
 
     <!-- Notes area -->
-    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
 
         <!-- Structured Notes -->
-        <div class="lg:col-span-2 bg-white rounded-xl border p-5 min-h-[400px]">
+        <div class="bg-white rounded-xl border p-5 min-h-[400px]">
             <h2 class="text-sm font-semibold text-gray-400 uppercase tracking-wide mb-3">Notes</h2>
-            <p class="text-gray-400 text-sm italic py-8 text-center">Live notes will appear here when transcription is available.</p>
+            <p class="text-gray-400 text-sm italic py-8 text-center">Structured notes will appear here when note generation is available.</p>
+        </div>
+
+        <!-- Live transcript -->
+        <div class="bg-white rounded-xl border p-5 min-h-[400px]">
+            <h2 class="text-sm font-semibold text-gray-400 uppercase tracking-wide mb-3">Live Transcript</h2>
+            <div class="space-y-3" aria-live="polite">
+                <template x-for="(entry, index) in transcript" :key="index">
+                    <p class="p-3 bg-gray-50 rounded-lg border-l-4 border-l-brand-500 text-sm text-gray-800" x-text="entry"></p>
+                </template>
+                <p x-show="partialText" x-text="partialText" class="p-3 bg-brand-50 rounded-lg text-sm italic text-gray-600"></p>
+                <p x-show="transcript.length === 0 && !partialText" class="text-gray-400 text-sm italic py-8 text-center">
+                    Speech will appear here as it is transcribed.
+                </p>
+            </div>
         </div>
 
         <!-- Flags sidebar -->
-        <div class="bg-white rounded-xl border p-5 min-h-[400px]">
+        <div class="lg:col-span-2 bg-white rounded-xl border p-5">
             <h2 class="text-sm font-semibold text-gray-400 uppercase tracking-wide mb-3">⚠️ Concepts to Review</h2>
             <p class="text-gray-400 text-sm italic py-8 text-center">Concepts to review will show up here when AI notes are available.</p>
         </div>
@@ -66,12 +84,24 @@ function lectureRecorder() {
         status: 'Ready — click Record to start',
         ws: null,
         connectionLost: false,
+        recordingAvailable: false,
+        sentAudio: false,
+        downloading: false,
+        downloadChunks: [],
+        expectedDownloadBytes: 0,
         receivedChunks: 0,
         receivedBytes: 0,
-        recorder: null,
+        transcript: [],
+        partialText: '',
+        transcriptionError: '',
+        readyResolve: null,
+        readyReject: null,
         stream: null,
-        lastRecording: null,
-        recordingType: '',
+        audioContext: null,
+        source: null,
+        processor: null,
+        resampleBuffer: [],
+        resamplePosition: 0,
         elapsed: '00:00',
         timerInterval: null,
         seconds: 0,
@@ -85,8 +115,9 @@ function lectureRecorder() {
         },
 
         async startRecording() {
-            if (this.starting || this.recording) return;
-            if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) {
+            if (this.starting || this.recording || this.downloading) return;
+            const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+            if (!navigator.mediaDevices?.getUserMedia || !AudioContextClass) {
                 this.status = 'This browser does not support microphone recording.';
                 return;
             }
@@ -94,59 +125,144 @@ function lectureRecorder() {
             this.starting = true;
             this.status = 'Connecting to local server...';
             try {
+                this.recordingAvailable = false;
+                this.ws?.close();
                 this.ws = createWebSocket('/lecture/ws');
+                const socket = this.ws;
                 await new Promise((resolve, reject) => {
-                    this.ws.onopen = resolve;
-                    this.ws.onerror = () => reject(new Error('WebSocket connection failed'));
-                    this.ws.onclose = () => reject(new Error('WebSocket connection closed'));
+                    socket.onopen = resolve;
+                    socket.onerror = () => reject(new Error('WebSocket connection failed'));
+                    socket.onclose = () => reject(new Error('WebSocket connection closed'));
                 });
-                this.ws.onmessage = (event) => {
+                socket.binaryType = 'arraybuffer';
+                socket.onmessage = (event) => {
+                    if (this.ws !== socket) return;
+                    if (event.data instanceof ArrayBuffer) {
+                        if (this.downloading) this.downloadChunks.push(event.data);
+                        return;
+                    }
                     const message = JSON.parse(event.data);
                     if (message.type === 'audio_received') {
                         this.receivedChunks = message.chunks;
                         this.receivedBytes = message.total_bytes;
+                    } else if (message.type === 'ready') {
+                        this.readyResolve?.();
+                        this.readyResolve = null;
+                        this.readyReject = null;
+                    } else if (message.type === 'partial') {
+                        this.partialText = message.text;
+                    } else if (message.type === 'final') {
+                        this.transcript.push(message.text);
+                        this.partialText = '';
+                    } else if (message.type === 'transcription_error') {
+                        this.transcriptionError = message.message;
+                        this.readyReject?.(new Error(message.message));
+                        this.readyResolve = null;
+                        this.readyReject = null;
+                    } else if (message.type === 'recording_stopped') {
+                        this.partialText = '';
+                        this.starting = false;
+                        this.recordingAvailable = this.sentAudio;
+                        this.status = this.recordingAvailable ? 'Recording ready to download as MP3.' : 'No audio was captured.';
+                    } else if (message.type === 'download_started') {
+                        this.expectedDownloadBytes = message.total_bytes;
+                        this.downloadChunks = [];
+                    } else if (message.type === 'download_complete') {
+                        const size = this.downloadChunks.reduce((total, chunk) => total + chunk.byteLength, 0);
+                        if (size === this.expectedDownloadBytes && size > 0) {
+                            downloadBlob(new Blob(this.downloadChunks, { type: 'audio/mpeg' }), 'lecture-recording.mp3');
+                            this.status = 'Recording downloaded.';
+                        } else {
+                            this.status = 'Audio transfer was incomplete. Try again.';
+                        }
+                        this.downloadChunks = [];
+                        this.downloading = false;
+                    } else if (message.type === 'download_error') {
+                        this.status = message.message;
+                        this.downloadChunks = [];
+                        this.downloading = false;
                     }
                 };
-                this.ws.onclose = () => {
+                socket.onclose = () => {
+                    if (this.ws !== socket) return;
+                    this.readyReject?.(new Error('WebSocket connection closed'));
+                    this.readyResolve = null;
+                    this.readyReject = null;
                     if (this.recording) {
                         this.connectionLost = true;
                         this.stopRecording();
+                    } else if (this.recordingAvailable || this.downloading || this.starting) {
+                        this.recordingAvailable = false;
+                        this.downloading = false;
+                        this.downloadChunks = [];
+                        this.status = 'Server connection lost. Recording unavailable for download.';
+                        this.starting = false;
                     }
                 };
 
+                const ready = new Promise((resolve, reject) => {
+                    this.readyResolve = resolve;
+                    this.readyReject = reject;
+                });
+                socket.send(JSON.stringify({ type: 'start', sample_rate: 16000 }));
+                this.status = 'Loading local speech model...';
+                await ready;
+
                 this.status = 'Opening microphone...';
-                this.stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-                if (this.ws.readyState !== WebSocket.OPEN) {
+                this.stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1 } });
+                if (socket.readyState !== WebSocket.OPEN) {
                     throw new Error('WebSocket connection closed');
                 }
-                const chunks = [];
-                this.recorder = new MediaRecorder(this.stream);
-                this.recordingType = this.recorder.mimeType;
-                this.recorder.ondataavailable = (event) => {
-                    if (event.data.size) {
-                        chunks.push(event.data);
-                        if (this.ws?.readyState === WebSocket.OPEN) this.ws.send(event.data);
+                this.audioContext = new AudioContextClass();
+                this.source = this.audioContext.createMediaStreamSource(this.stream);
+                this.processor = this.audioContext.createScriptProcessor(4096, 1, 1);
+                this.resampleBuffer = [];
+                this.resamplePosition = 0;
+                this.processor.onaudioprocess = (event) => {
+                    if (!this.recording || socket.readyState !== WebSocket.OPEN) return;
+                    if (socket.bufferedAmount > 4 * 1024 * 1024) {
+                        this.stopRecording();
+                        this.status = 'Audio stream fell behind; finishing the recording.';
+                        return;
                     }
+                    const input = event.inputBuffer.getChannelData(0);
+                    for (let i = 0; i < input.length; i++) this.resampleBuffer.push(input[i]);
+                    const step = this.audioContext.sampleRate / 16000;
+                    const samples = [];
+                    while (this.resamplePosition + 1 < this.resampleBuffer.length) {
+                        const index = Math.floor(this.resamplePosition);
+                        const fraction = this.resamplePosition - index;
+                        samples.push(this.resampleBuffer[index] * (1 - fraction) + this.resampleBuffer[index + 1] * fraction);
+                        this.resamplePosition += step;
+                    }
+                    const consumed = Math.min(Math.floor(this.resamplePosition), this.resampleBuffer.length - 1);
+                    this.resampleBuffer = this.resampleBuffer.slice(consumed);
+                    this.resamplePosition -= consumed;
+                    if (!samples.length) return;
+                    const pcm = new ArrayBuffer(samples.length * 2);
+                    const view = new DataView(pcm);
+                    samples.forEach((value, index) => {
+                        const sample = Math.max(-1, Math.min(1, value));
+                        view.setInt16(index * 2, sample < 0 ? sample * 0x8000 : sample * 0x7fff, true);
+                    });
+                    socket.send(pcm);
+                    this.sentAudio = true;
                 };
-                this.recorder.onstop = () => {
-                    this.recording = false;
-                    clearInterval(this.timerInterval);
-                    this.lastRecording = chunks.length ? new Blob(chunks, { type: this.recordingType }) : null;
-                    this.releaseMicrophone();
-                    if (this.ws?.readyState === WebSocket.OPEN) this.ws.close();
-                    this.ws = null;
-                    this.status = this.connectionLost
-                        ? 'Server connection lost. Recording stopped; download the audio to keep it.'
-                        : this.lastRecording ? 'Recording ready to download.' : 'No audio was captured. Try again.';
-                    this.starting = false;
-                };
-                this.recorder.start(1000);
-                this.lastRecording = null;
+                this.source.connect(this.processor);
+                this.processor.connect(this.audioContext.destination);
+                await this.audioContext.resume();
+                if (this.ws !== socket || socket.readyState !== WebSocket.OPEN) throw new Error('WebSocket connection closed');
+                this.recordingAvailable = false;
+                this.sentAudio = false;
+                this.downloadChunks = [];
                 this.connectionLost = false;
+                this.transcriptionError = '';
+                this.transcript = [];
+                this.partialText = '';
                 this.receivedChunks = 0;
                 this.receivedBytes = 0;
                 this.recording = true;
-                this.status = 'Recording & streaming to local server — click Stop when finished';
+                this.status = 'Recording & transcribing locally — click Stop when finished';
                 this.seconds = 0;
                 this.elapsed = '00:00';
                 this.timerInterval = setInterval(() => {
@@ -157,8 +273,11 @@ function lectureRecorder() {
                 this.releaseMicrophone();
                 this.ws?.close();
                 this.ws = null;
+                this.readyResolve = null;
+                this.readyReject = null;
                 this.status = error.message.includes('WebSocket')
                     ? 'Could not connect to the local server. Try again.'
+                    : error.message.includes('speech model') ? error.message
                     : 'Microphone unavailable. Allow access and try again.';
             } finally {
                 this.starting = false;
@@ -170,23 +289,39 @@ function lectureRecorder() {
             this.recording = false;
             this.starting = true;
             clearInterval(this.timerInterval);
-            this.status = 'Preparing audio download...';
-            this.recorder.stop();
+            this.releaseMicrophone();
+            if (this.ws?.readyState === WebSocket.OPEN && this.sentAudio) {
+                this.status = 'Finishing transcription...';
+                this.ws.send(JSON.stringify({ type: 'stop' }));
+            } else {
+                this.ws?.close();
+                this.status = this.connectionLost ? 'Server connection lost.' : 'No audio was captured.';
+                this.starting = false;
+            }
         },
 
         downloadRecording() {
-            if (!this.lastRecording) return;
-            const extension = this.recordingType.includes('mp4') ? 'mp4' : this.recordingType.includes('ogg') ? 'ogg' : 'webm';
-            downloadBlob(this.lastRecording, `lecture-recording.${extension}`);
+            if (!this.recordingAvailable || this.downloading || this.ws?.readyState !== WebSocket.OPEN) return;
+            this.downloading = true;
+            this.downloadChunks = [];
+            this.status = 'Retrieving audio from server...';
+            this.ws.send(JSON.stringify({ type: 'download_audio' }));
         },
 
         releaseMicrophone() {
+            if (this.processor) this.processor.onaudioprocess = null;
+            this.source?.disconnect();
+            this.processor?.disconnect();
+            this.source = null;
+            this.processor = null;
+            this.audioContext?.close();
+            this.audioContext = null;
             this.stream?.getTracks().forEach(track => track.stop());
             this.stream = null;
         },
 
         destroy() {
-            if (this.recorder?.state === 'recording') this.recorder.stop();
+            this.recording = false;
             clearInterval(this.timerInterval);
             this.releaseMicrophone();
             this.ws?.close();
