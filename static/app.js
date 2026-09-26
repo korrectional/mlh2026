@@ -1,4 +1,4 @@
-/* Shared frontend utilities for MLH Toolkit */
+/* Shared frontend utilities for Student Toolkit */
 
 // WebSocket helper — lecture tool branch will flesh this out
 function createWebSocket(path) {
@@ -24,4 +24,4 @@ function downloadBlob(blob, filename) {
     URL.revokeObjectURL(url);
 }
 
-console.log('🧰 MLH Toolkit loaded');
+console.log('Student Toolkit loaded');

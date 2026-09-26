@@ -14,7 +14,7 @@ from routers import lecture, study_buddy, dashboard
 from utils.helpers import GEMINI_API_KEY
 
 # ── App ────────────────────────────────────────────────────────────────
-app = FastAPI(title="MLH Toolkit", version="0.1.0")
+app = FastAPI(title="Student Toolkit", version="0.1.0")
 
 # ── Static files & templates ────────────────────────────────────────────
 BASE_DIR = Path(__file__).parent
