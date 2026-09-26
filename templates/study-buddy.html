@@ -9,6 +9,7 @@
 <style>
     /* Dark monochrome theme, scoped to this page: overrides the shared light shell without editing base.html. */
     :root { color-scheme: dark; }
+    [x-cloak] { display: none !important; }
     body.bg-gray-50 { background: #0a0a0a; color: #d4d4d4; font-family: "Geist", ui-sans-serif, system-ui, sans-serif; }
     ::selection { background: #fafafa; color: #0a0a0a; }
     nav.bg-white { background: rgba(10, 10, 10, 0.72); border-color: #1c1c1c; box-shadow: none; backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); }
@@ -26,7 +27,8 @@
         mask-image: radial-gradient(ellipse 60% 70% at 50% 0%, #000 20%, transparent 75%);
     }
     .sb-glow { background: radial-gradient(520px circle at 50% 0%, rgba(255, 255, 255, 0.08), transparent 70%); }
-    #quiz-container { scroll-margin-top: 72px; }
+    #sb-stage { scroll-margin-top: 72px; }
+    input[type="date"]::-webkit-calendar-picker-indicator { filter: invert(1); opacity: 0.6; }
 
     #sb-loading { display: none; }
     #sb-loading.htmx-request { display: flex; }
@@ -41,11 +43,27 @@
     @media (prefers-reduced-motion: reduce) { .sb-reveal, .sb-ring { animation: none; } }
 </style>
 
+<script>
+    function studyBuddy() {
+        return {
+            dragging: false,
+            fileName: '',
+            mode: 'plan',
+            step: 0,
+            steps: {
+                plan: ['Reading your PDF', 'Mapping the concepts', 'Scoring complexity', 'Writing your lessons'],
+                quiz: ['Reading your PDF', 'Finding the key concepts', 'Writing questions', 'Checking the answer key'],
+            },
+            init() { setInterval(() => { this.step = (this.step + 1) % 4 }, 2600) },
+        };
+    }
+</script>
+
 <div class="relative">
     <div aria-hidden="true" class="sb-grid pointer-events-none absolute inset-x-0 -top-8 h-80"></div>
     <div aria-hidden="true" class="sb-glow pointer-events-none absolute inset-x-0 -top-8 h-80"></div>
 
-    <div class="relative mx-auto max-w-2xl space-y-10 pb-12">
+    <div class="relative mx-auto max-w-2xl space-y-10 pb-12" x-data="studyBuddy()" @htmx:before-request.window="step = 0">
 
         <header class="space-y-5 pt-10 text-center">
             <span class="sb-mono inline-flex items-center gap-2 rounded-full border border-neutral-800 bg-neutral-950/80 px-3 py-1 text-[11px] uppercase tracking-[0.2em] text-neutral-400">
@@ -53,10 +71,10 @@
                 Study Buddy
             </span>
             <h1 class="text-4xl font-semibold leading-[1.05] tracking-tight text-white sm:text-5xl">
-                Drop a PDF.<br><span class="text-neutral-500">Get a quiz.</span>
+                Drop your notes.<br><span class="text-neutral-500">Get a plan.</span>
             </h1>
             <p class="mx-auto max-w-md leading-relaxed text-neutral-400">
-                Upload lecture slides or a textbook chapter. Gemini writes practice questions and explains every one you miss.
+                Study Buddy scores how complex your material is, estimates how long it takes to learn, and turns it into daily sessions that fit the time you actually have.
             </p>
         </header>
 
@@ -64,22 +82,31 @@
               hx-post="/study-buddy/upload"
               hx-encoding="multipart/form-data"
               hx-trigger="change from:#sb-file"
-              hx-target="#quiz-container"
+              hx-target="#sb-stage"
               hx-swap="innerHTML show:top"
               hx-indicator="#sb-loading"
-              x-data="{ dragging: false, fileName: '' }"
               @htmx:after-request="$refs.file.value = ''"
               class="space-y-4">
 
-            <div class="flex items-center justify-center gap-3">
-                <span class="sb-mono text-[11px] uppercase tracking-[0.2em] text-neutral-500">Questions</span>
+            <div class="flex flex-wrap items-center justify-center gap-3">
                 <div class="inline-flex rounded-full border border-neutral-800 bg-neutral-950 p-1">
-                    {% for n in [5, 10, 15] %}
+                    {% for value, label in [('plan', 'Study plan'), ('quiz', 'Quick quiz')] %}
                     <label class="cursor-pointer">
-                        <input type="radio" name="num_questions" value="{{ n }}" class="peer sr-only" {% if n == 5 %}checked{% endif %}>
-                        <span class="sb-mono block rounded-full px-4 py-1 text-sm text-neutral-500 transition hover:text-neutral-200 peer-checked:bg-white peer-checked:text-black peer-focus-visible:ring-2 peer-focus-visible:ring-white/40">{{ n }}</span>
+                        <input type="radio" name="mode" value="{{ value }}" x-model="mode" class="peer sr-only">
+                        <span class="block rounded-full px-4 py-1 text-sm text-neutral-500 transition hover:text-neutral-200 peer-checked:bg-white peer-checked:text-black peer-focus-visible:ring-2 peer-focus-visible:ring-white/40">{{ label }}</span>
                     </label>
                     {% endfor %}
+                </div>
+                <div x-show="mode === 'quiz'" x-cloak class="inline-flex items-center gap-2">
+                    <span class="sb-mono text-[11px] uppercase tracking-[0.2em] text-neutral-500">Questions</span>
+                    <div class="inline-flex rounded-full border border-neutral-800 bg-neutral-950 p-1">
+                        {% for n in [5, 10, 15] %}
+                        <label class="cursor-pointer">
+                            <input type="radio" name="num_questions" value="{{ n }}" class="peer sr-only" {% if n == 5 %}checked{% endif %}>
+                            <span class="sb-mono block rounded-full px-3 py-1 text-sm text-neutral-500 transition hover:text-neutral-200 peer-checked:bg-white peer-checked:text-black peer-focus-visible:ring-2 peer-focus-visible:ring-white/40">{{ n }}</span>
+                        </label>
+                        {% endfor %}
+                    </div>
                 </div>
             </div>
 
@@ -94,22 +121,19 @@
                         <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M12 18v-6"/><path d="m9 15 3-3 3 3"/>
                     </svg>
                 </div>
-                <p class="text-base text-neutral-100" x-text="fileName || 'Drop lecture slides or a textbook PDF'">Drop lecture slides or a textbook PDF</p>
+                <p class="text-base text-neutral-100" x-text="fileName || 'Drop lecture slides, notes, or a textbook PDF'">Drop lecture slides, notes, or a textbook PDF</p>
                 <p class="sb-mono mt-2 text-xs text-neutral-500">or click to browse · PDF up to 20 MB</p>
                 <input id="sb-file" x-ref="file" type="file" name="file" accept=".pdf,application/pdf" class="sr-only"
                        @change="fileName = $event.target.files[0]?.name || ''">
             </label>
         </form>
 
-        <div id="sb-loading" class="flex-col items-center gap-4 py-6"
-             x-data="{ i: 0, steps: ['Reading your PDF', 'Finding the key concepts', 'Writing questions', 'Checking the answer key'] }"
-             x-init="setInterval(() => { i = (i + 1) % steps.length }, 2400)"
-             @htmx:before-request.window="i = 0">
+        <div id="sb-loading" class="flex-col items-center gap-4 py-6">
             <div class="h-7 w-7 animate-spin rounded-full border-[1.5px] border-neutral-800 border-t-white"></div>
-            <p class="sb-mono text-xs uppercase tracking-[0.2em] text-neutral-400" x-text="steps[i] + '…'">Reading your PDF…</p>
+            <p class="sb-mono text-xs uppercase tracking-[0.2em] text-neutral-400" x-text="steps[mode][step] + '…'">Reading your PDF…</p>
         </div>
 
-        <div id="quiz-container"></div>
+        <div id="sb-stage">{{ stage_html | safe }}</div>
 
         <p class="sb-mono text-center text-[11px] uppercase tracking-[0.2em] text-neutral-700">Runs on localhost · Powered by Gemini</p>
     </div>

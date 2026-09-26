@@ -1,0 +1,134 @@
+{% set a = plan.analysis %}
+<div class="sb-reveal space-y-5">
+    <div class="min-w-0">
+        <p class="sb-mono truncate text-[11px] uppercase tracking-[0.2em] text-neutral-500">{{ plan.filename }}</p>
+        <h2 class="mt-1 text-2xl font-semibold tracking-tight text-white">{{ plan.title }}</h2>
+    </div>
+
+    <div class="space-y-7 rounded-3xl border border-neutral-800 bg-neutral-950 p-7">
+        <div class="flex items-end justify-between gap-6">
+            <div>
+                <p class="sb-mono text-[11px] uppercase tracking-[0.2em] text-neutral-500">Complexity</p>
+                <p class="mt-2 flex items-baseline gap-2">
+                    <span class="text-6xl font-semibold tracking-tight text-white">{{ a.score }}</span>
+                    <span class="sb-mono text-neutral-500">/ 10</span>
+                </p>
+            </div>
+            <span class="sb-mono rounded-full bg-white px-3 py-1 text-xs uppercase tracking-[0.16em] text-black">{{ a.tier }}</span>
+        </div>
+
+        <div class="pb-5">
+            <div class="relative h-2 rounded-full bg-gradient-to-r from-neutral-800 via-neutral-500 to-white">
+                {% for boundary in [4, 6, 8] %}
+                <span class="absolute top-0 h-2 w-px bg-[#0a0a0a]" style="left: {{ ((boundary - 1) / 9 * 100) | round(2) }}%"></span>
+                {% endfor %}
+                <span class="absolute top-1/2 h-5 w-5 -translate-x-1/2 -translate-y-1/2 rounded-full border-4 border-neutral-950 bg-white shadow-[0_0_0_1px_rgba(255,255,255,0.4)]"
+                      style="left: {{ ((a.score - 1) / 9 * 100) | round(2) }}%"></span>
+            </div>
+            <div class="sb-mono relative mt-3 text-[10px] uppercase tracking-[0.16em] text-neutral-500">
+                {% for label, mid in [('Light', 2.5), ('Moderate', 5), ('Challenging', 7), ('Intense', 9)] %}
+                <span class="absolute -translate-x-1/2 whitespace-nowrap {{ 'text-white' if label == a.tier else '' }}" style="left: {{ ((mid - 1) / 9 * 100) | round(2) }}%">{{ label }}</span>
+                {% endfor %}
+            </div>
+        </div>
+
+        <div class="space-y-4 border-t border-neutral-900 pt-6">
+            <p class="sb-mono text-[11px] uppercase tracking-[0.2em] text-neutral-500">Why {{ a.score }}</p>
+            {% for f in a.factors %}
+            <div class="space-y-1.5">
+                <div class="flex items-baseline justify-between gap-4">
+                    <span class="text-sm text-neutral-300">{{ f.label }}</span>
+                    <span class="sb-mono text-xs text-neutral-400">{{ f.value }}</span>
+                </div>
+                <div class="h-1 rounded-full bg-neutral-900">
+                    <div class="h-1 rounded-full bg-neutral-300" style="width: {{ [(f.fill * 100) | round(1), 2] | max }}%"></div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+
+    <div class="grid grid-cols-2 gap-3">
+        <div class="rounded-2xl border border-neutral-800 bg-neutral-950 p-5">
+            <p class="sb-mono text-[10px] uppercase tracking-[0.2em] text-neutral-500">Time to learn</p>
+            <p class="mt-2 text-3xl font-semibold tracking-tight text-white">{{ a.total_minutes | minutes }}</p>
+            <p class="sb-mono mt-1 text-xs text-neutral-500">includes daily review</p>
+        </div>
+        <div class="rounded-2xl border border-neutral-800 bg-neutral-950 p-5">
+            <p class="sb-mono text-[10px] uppercase tracking-[0.2em] text-neutral-500">Concepts</p>
+            <p class="mt-2 text-3xl font-semibold tracking-tight text-white">{{ a.concept_count }}</p>
+            <p class="sb-mono mt-1 text-xs text-neutral-500">in learning order</p>
+        </div>
+    </div>
+
+    <div class="space-y-3 rounded-2xl border border-neutral-800 bg-neutral-950 p-5">
+        <p class="sb-mono text-[10px] uppercase tracking-[0.2em] text-neutral-500">Learning order</p>
+        <ol class="space-y-2.5">
+            {% for c in plan.concepts %}
+            <li class="flex items-center gap-3 text-sm">
+                <span class="sb-mono w-5 text-xs text-neutral-600">{{ '%02d' | format(loop.index) }}</span>
+                <span class="min-w-0 flex-1 truncate text-neutral-200">{{ c.name }}</span>
+                <span class="flex gap-1" title="Difficulty {{ c.difficulty }} of 3">
+                    {% for k in range(3) %}<span class="h-1.5 w-1.5 rounded-full {{ 'bg-white' if k < c.difficulty else 'bg-neutral-800' }}"></span>{% endfor %}
+                </span>
+                <span class="sb-mono w-14 text-right text-xs text-neutral-500">{{ c.minutes }} min</span>
+            </li>
+            {% endfor %}
+        </ol>
+    </div>
+
+    <form hx-post="/study-buddy/plan"
+          hx-target="#sb-stage"
+          hx-swap="innerHTML show:top"
+          class="space-y-6 rounded-3xl border border-neutral-800 bg-neutral-950 p-7"
+          x-data="{
+              total: {{ a.total_minutes }},
+              per: 10,
+              exam: '',
+              get sessions() { return Math.ceil(this.total / this.per) },
+              get daysLeft() {
+                  if (!this.exam) return null;
+                  const today = new Date(); today.setHours(0, 0, 0, 0);
+                  return Math.round((new Date(this.exam + 'T00:00:00') - today) / 86400000);
+              },
+              get needed() { return this.daysLeft > 0 ? Math.ceil(this.total / this.daysLeft) : null },
+              plural(n, word) { return n + ' ' + word + (n === 1 ? '' : 's') },
+          }">
+        <input type="hidden" name="plan_id" value="{{ plan.id }}">
+
+        <div class="space-y-3">
+            <p class="text-lg font-medium text-white">How much time can you give it each day?</p>
+            <div class="grid grid-cols-5 gap-2">
+                {% for m in daily_options %}
+                <label class="cursor-pointer">
+                    <input type="radio" name="per_day" value="{{ m }}" x-model.number="per" class="peer sr-only">
+                    <span class="block rounded-2xl border border-neutral-800 py-4 text-center text-neutral-300 transition hover:border-neutral-600 peer-checked:border-white peer-checked:bg-white peer-checked:text-black peer-focus-visible:ring-2 peer-focus-visible:ring-white/40">
+                        <span class="block text-2xl font-semibold">{{ m }}</span>
+                        <span class="sb-mono block text-[10px] uppercase tracking-[0.16em] opacity-60">min/day</span>
+                    </span>
+                </label>
+                {% endfor %}
+            </div>
+        </div>
+
+        <div class="space-y-2">
+            <label for="sb-exam" class="text-sm text-neutral-300">When's the exam? <span class="text-neutral-600">Optional</span></label>
+            <input id="sb-exam" type="date" name="exam_date" x-model="exam"
+                   class="block w-full rounded-xl border border-neutral-800 bg-neutral-900 px-4 py-3 text-neutral-100 focus:border-neutral-500 focus:outline-none">
+        </div>
+
+        <div class="space-y-1.5 rounded-2xl bg-neutral-900/60 p-5">
+            <p class="text-neutral-300">
+                <span class="sb-mono text-2xl font-semibold text-white" x-text="sessions"></span>
+                <span x-text="(sessions === 1 ? 'session' : 'sessions') + ' of ' + per + ' minutes to learn it all.'"></span>
+            </p>
+            <p x-show="daysLeft !== null && daysLeft > 0 && sessions <= daysLeft" x-cloak class="text-sm text-neutral-400"
+               x-text="'You\'ll finish ' + plural(daysLeft - sessions, 'day') + ' before your exam.'"></p>
+            <p x-show="daysLeft !== null && daysLeft > 0 && sessions > daysLeft" x-cloak class="text-sm text-white"
+               x-text="'At ' + per + ' min/day you\'ll finish ' + plural(sessions - daysLeft, 'day') + ' after your exam. You need ' + needed + ' min/day.'"></p>
+            <p x-show="daysLeft !== null && daysLeft <= 0" x-cloak class="text-sm text-white">That date is today or already passed.</p>
+        </div>
+
+        <button class="w-full rounded-full bg-white py-3 text-sm font-medium text-black transition hover:bg-neutral-200">Build my plan →</button>
+    </form>
+</div>
