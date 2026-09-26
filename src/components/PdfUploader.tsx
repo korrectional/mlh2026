@@ -28,32 +28,49 @@ export default function PdfUploader({ onUpload, isLoading }: Props) {
   return (
     <div
       {...getRootProps()}
-      className={`border-2 border-dashed rounded-2xl p-12 text-center cursor-pointer transition-all duration-200 ${
+      className={`border border-dashed rounded-2xl p-16 text-center cursor-pointer transition-all duration-200 ${
         isDragActive
-          ? "border-blue-500 bg-blue-500/10"
-          : "border-gray-600 hover:border-gray-400 bg-gray-900/50"
+          ? "border-neutral-300 bg-neutral-900"
+          : "border-neutral-800 hover:border-neutral-600 bg-neutral-950"
       } ${isLoading ? "opacity-50 cursor-not-allowed" : ""}`}
     >
       <input {...getInputProps()} />
-      <div className="flex flex-col items-center gap-4">
-        <div className="text-5xl">📄</div>
+      <div className="flex flex-col items-center gap-5">
         {isLoading ? (
           <>
-            <div className="animate-spin text-3xl">⚙️</div>
-            <p className="text-lg text-gray-300">
+            <div className="w-8 h-8 border-2 border-neutral-700 border-t-neutral-100 rounded-full animate-spin" />
+            <p className="text-base text-neutral-400">
               Gemini is generating your quiz...
             </p>
           </>
-        ) : isDragActive ? (
-          <p className="text-lg text-blue-400">Drop your PDF here</p>
         ) : (
           <>
-            <p className="text-lg text-gray-200">
-              Drop lecture slides or a textbook PDF
-            </p>
-            <p className="text-sm text-gray-500">
-              or click to browse
-            </p>
+            <div className="w-12 h-12 rounded-xl bg-neutral-900 border border-neutral-800 flex items-center justify-center">
+              <svg
+                width="20"
+                height="20"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                className="text-neutral-400"
+              >
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                <path d="M14 2v6h6" />
+                <path d="M12 18v-6" />
+                <path d="m9 15 3-3 3 3" />
+              </svg>
+            </div>
+            {isDragActive ? (
+              <p className="text-base text-neutral-200">Drop your PDF here</p>
+            ) : (
+              <>
+                <p className="text-base text-neutral-200">
+                  Drop lecture slides or a textbook PDF
+                </p>
+                <p className="text-sm text-neutral-600">or click to browse</p>
+              </>
+            )}
           </>
         )}
       </div>

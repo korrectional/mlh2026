@@ -60,14 +60,28 @@ export default function Home() {
   }
 
   return (
-    <div className="min-h-screen bg-black text-white">
-      <header className="border-b border-gray-800">
-        <div className="max-w-4xl mx-auto px-6 py-4 flex items-center justify-between">
+    <div className="min-h-screen bg-[#0a0a0a] text-neutral-100">
+      <header className="border-b border-neutral-800/80">
+        <div className="max-w-4xl mx-auto px-6 py-5 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <span className="text-2xl">📄</span>
+            <div className="w-8 h-8 rounded-md bg-neutral-100 flex items-center justify-center">
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="black"
+                strokeWidth="2"
+              >
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                <path d="M14 2v6h6" />
+              </svg>
+            </div>
             <div>
-              <h1 className="text-xl font-bold">Study Buddy</h1>
-              <p className="text-xs text-gray-500">
+              <h1 className="text-base font-semibold tracking-tight text-neutral-50">
+                Study Buddy
+              </h1>
+              <p className="text-[11px] uppercase tracking-wider text-neutral-500">
                 Powered by Gemini
               </p>
             </div>
@@ -75,7 +89,7 @@ export default function Home() {
           {quiz && (
             <button
               onClick={handleReset}
-              className="text-sm text-gray-400 hover:text-white transition-colors"
+              className="text-sm text-neutral-500 hover:text-neutral-100 transition-colors"
             >
               ← New PDF
             </button>
@@ -83,29 +97,28 @@ export default function Home() {
         </div>
       </header>
 
-      <main className="max-w-4xl mx-auto px-6 py-12">
+      <main className="max-w-4xl mx-auto px-6 py-16">
         {!quiz ? (
-          <div className="space-y-8">
+          <div className="space-y-10">
             <div className="text-center space-y-3">
-              <h2 className="text-4xl font-bold">
+              <h2 className="text-4xl font-semibold tracking-tight text-neutral-50">
                 Drop a PDF, get a quiz
               </h2>
-              <p className="text-gray-400 text-lg max-w-md mx-auto">
+              <p className="text-neutral-500 text-base max-w-md mx-auto leading-relaxed">
                 Upload your lecture slides or textbook chapter. AI generates
                 practice questions and explains every wrong answer.
               </p>
             </div>
 
-            <div className="flex justify-center gap-3 items-center">
-              <label className="text-sm text-gray-400">Questions:</label>
+            <div className="flex justify-center items-center gap-1 p-1 bg-neutral-900 border border-neutral-800 rounded-lg w-fit mx-auto">
               {[5, 10, 15].map((n) => (
                 <button
                   key={n}
                   onClick={() => setNumQuestions(n)}
-                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                  className={`px-5 py-1.5 rounded-md text-sm font-medium transition-all ${
                     numQuestions === n
-                      ? "bg-blue-600 text-white"
-                      : "bg-gray-800 text-gray-400 hover:bg-gray-700"
+                      ? "bg-neutral-100 text-black"
+                      : "text-neutral-500 hover:text-neutral-200"
                   }`}
                 >
                   {n}
@@ -116,14 +129,14 @@ export default function Home() {
             <PdfUploader onUpload={handleUpload} isLoading={loading} />
 
             {loading && fileName && (
-              <p className="text-center text-sm text-gray-500">
-                Processing <span className="text-gray-300">{fileName}</span>...
+              <p className="text-center text-sm text-neutral-600">
+                Processing <span className="text-neutral-400">{fileName}</span>...
               </p>
             )}
 
             {error && (
-              <div className="bg-red-900/20 border border-red-700/50 rounded-xl p-4 text-center">
-                <p className="text-red-400">{error}</p>
+              <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-4 text-center">
+                <p className="text-neutral-300">{error}</p>
               </div>
             )}
           </div>
