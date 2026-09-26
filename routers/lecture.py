@@ -1,24 +1,42 @@
-"""Lecture Note-Taker router — stub for branch."""
+"""Lecture Note-Taker page and audio WebSocket."""
 
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from pathlib import Path
+
+from fastapi import APIRouter, Request, WebSocket, WebSocketDisconnect
+from fastapi.responses import HTMLResponse
+from jinja2 import Environment, FileSystemLoader
 
 router = APIRouter(prefix="/lecture", tags=["lecture"])
+_jinja_env = Environment(
+    loader=FileSystemLoader(str(Path(__file__).resolve().parent.parent / "templates")),
+    cache_size=0,
+    auto_reload=True,
+)
 
 
-@router.get("/")
-async def lecture_page():
-    """Placeholder — branch will return HTML template."""
-    return {"message": "Lecture Note-Taker — under construction"}
+@router.get("/", response_class=HTMLResponse)
+async def lecture_page(request: Request):
+    return HTMLResponse(_jinja_env.get_template("lecture.html").render(request=request))
 
 
 @router.websocket("/ws")
 async def lecture_websocket(websocket: WebSocket):
-    """Placeholder — branch will stream audio → Gemini → notes."""
+    """Receive live MediaRecorder chunks and acknowledge their arrival."""
     await websocket.accept()
+    # Keep the actual audio for this connection, in the order it arrives.
+    audio_data = bytearray()
+    chunks = 0
     try:
         while True:
             data = await websocket.receive_bytes()
-            # TODO: forward to Gemini, send back structured notes
-            await websocket.send_json({"type": "note", "text": f"Received {len(data)} bytes"})
+            audio_data.extend(data)
+            chunks += 1
+            await websocket.send_json({
+                "type": "audio_received",
+                "bytes": len(data),
+                "total_bytes": len(audio_data),
+                "chunks": chunks,
+            })
+
     except WebSocketDisconnect:
         pass
