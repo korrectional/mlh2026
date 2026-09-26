@@ -35,12 +35,83 @@ async def render_template(name: str, request: Request, **extra) -> HTMLResponse:
 
 # ── Page ───────────────────────────────────────────────────────────────
 
+MOODLE_URL = "https://moodle-courses2527.wolfware.ncsu.edu/my/"
+
+
 @router.get("/", response_class=HTMLResponse)
 async def dashboard_page(request: Request):
     return await render_template("dashboard.html", request=request)
 
 
-# ── Debug: load sample HTML ──────────────────────────────────────────
+# ── Open Moodle in browser ───────────────────────────────────────────
+
+@router.get("/open-moodle", response_class=HTMLResponse)
+async def open_moodle():
+    """Redirect the browser to the NCSU Moodle dashboard."""
+    return HTMLResponse(f'''
+    <!DOCTYPE html>
+    <html><head><meta charset="utf-8">
+    <title>Opening Moodle...</title>
+    <meta http-equiv="refresh" content="0;url={MOODLE_URL}">
+    <style>body {{ font-family: sans-serif; padding: 2em; text-align: center; }}</style>
+    </head><body>
+    <p>🔗 Opening Moodle dashboard...</p>
+    <p><a href="{MOODLE_URL}">Click here if not redirected</a></p>
+    </body></html>
+    ''')
+
+
+# ── Bookmarklet (future) ─────────────────────────────────────────────
+
+@router.get("/bookmarklet", response_class=HTMLResponse)
+async def bookmarklet_page():
+    """Page with a bookmarklet for one-click Moodle scraping."""
+    bookmarklet_js = (
+        "javascript:(function(){"
+        "var html=document.documentElement.outerHTML;"
+        "var x=new XMLHttpRequest();"
+        "x.open('POST','http://127.0.0.1:8000/dashboard/bookmarklet-capture',true);"
+        "x.setRequestHeader('Content-Type','application/x-www-form-urlencoded');"
+        "x.send('html='+encodeURIComponent(html));"
+        "alert('Sent to Dashboard Inspector!');"
+        "})()"
+    )
+    return HTMLResponse(f'''
+    <!DOCTYPE html>
+    <html><head><meta charset="utf-8">
+    <title>Dashboard Inspector Bookmarklet</title>
+    </head><body style="font-family: sans-serif; max-width: 600px; margin: 2em auto; line-height: 1.6;">
+    <h1>📋 Bookmarklet</h1>
+    <p>Drag this link to your bookmarks bar:</p>
+    <p>
+        <a href="{bookmarklet_js}"
+           style="display: inline-block; padding: 12px 24px; background: #2563eb; color: white;
+                  text-decoration: none; border-radius: 8px; font-weight: bold;">
+           📥 Send to Dashboard Inspector
+        </a>
+    </p>
+    <p>Then, when you're on your Moodle dashboard, click the bookmarklet.</p>
+    <p><a href="/dashboard/">← Back to Dashboard Inspector</a></p>
+    </body></html>
+    ''')
+
+
+@router.post("/bookmarklet-capture")
+async def bookmarklet_capture(html: str = Form("...")):
+    """Receive HTML from the bookmarklet and redirect back to the dashboard."""
+    from fastapi.responses import RedirectResponse
+    # Store in session or return to dashboard with results
+    # For now, redirect back to dashboard
+    return HTMLResponse('''
+    <!DOCTYPE html>
+    <html><head><meta charset="utf-8">
+    <title>Received!</title>
+    <style>body {{ font-family: sans-serif; padding: 2em; text-align: center; }}</style>
+    </head><body>
+    <p>✅ Dashboard HTML captured! Go back to the Dashboard Inspector.</p>
+    <p><a href="/dashboard/">← Back to Dashboard Inspector</a></p>
+    </body></html>
+    ''')
 
 @router.get("/debug/sample", response_class=HTMLResponse)
 async def debug_sample():
