@@ -20,7 +20,7 @@ def _read_clipboard() -> str:
     return pyperclip.paste()
 
 
-def _grab_current_page() -> str:
+def grab_active_page() -> str:
     """
     Ctrl+A → Ctrl+C to copy the entire current page, read clipboard, return.
     No Escape, no navigation — just selects all and copies.
@@ -30,6 +30,13 @@ def _grab_current_page() -> str:
     pyautogui.hotkey("ctrl", "c")
     time.sleep(0.4)
     return _read_clipboard()
+
+
+def _grab_current_page() -> str:
+    """
+    Alias kept for internal use. Same as grab_active_page().
+    """
+    return grab_active_page()
 
 
 # ── One-off: open a page, grab it, close the tab ──────────────────────

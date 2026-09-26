@@ -58,9 +58,10 @@
         {% if cached_time %}
         <div class="flex items-center justify-between p-3 bg-green-50 text-green-700 rounded-lg text-sm">
             <span>✅ Loaded from cache — last fetched {{ cached_time }}</span>
-            <button @click="startGrabCountdown()" :disabled="grabbing"
-                    class="px-3 py-1 text-xs font-medium rounded bg-green-200 hover:bg-green-300 transition disabled:opacity-50"
-                    x-text="grabbing ? 'Grabbing...' : '🔄 Refresh'">
+            <button @click="clearCache()"
+                    class="px-3 py-1 text-xs font-medium rounded bg-red-100 text-red-700 hover:bg-red-200 transition">
+                🗑️ Clear
+            </button>
             </button>
         </div>
         {% endif %}
@@ -142,6 +143,18 @@ function dashboardInspector() {
                     `<div class="p-4 bg-red-50 text-red-700 rounded border border-red-200">Grab failed: ${err.message}</div>`;
             } finally {
                 this.grabbing = false;
+            }
+        },
+
+        async clearCache() {
+            try {
+                const resp = await fetch('/dashboard/clear', { method: 'POST' });
+                const html = await resp.text();
+                document.getElementById('results').innerHTML = '';
+                document.getElementById('status-area').innerHTML = html;
+            } catch (err) {
+                document.getElementById('status-area').innerHTML =
+                    '<div class="p-4 bg-red-50 text-red-700 rounded border border-red-200">Failed to clear: ' + err.message + '</div>';
             }
         },
 

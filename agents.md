@@ -8,22 +8,21 @@ Built for **MLH 2026**.
 
 ---
 
-## 🧭 AI Context — Implementation Status (2026-09-26)
+## 🧭 AI Context — Implementation Status (2026-09-26, updated 2026-09-26)
 
 > This section is written for AI coding agents to get up to speed fast.
 > Update this section as the project evolves.
 
-### Active Branch: `feature/assignmenthelp`
+### Active Branch: `main`
 
-Current active work is on the **Dashboard Inspector** (Tool #3).
-The other two tools (Study Buddy, Lecture Note-Taker) are frontend shells with stub backends.
+All three tools are on `main`. Dashboard Inspector and Study Buddy are complete; Lecture Note-Taker is the remaining stub.
 
 ### Implementation Status
 
 | Tool | Status | What's Done | What's Missing |
 |---|---|---|---|
 | 📋 Dashboard Inspector | **✅ Complete** | Full scraper, Tab-navigation description extraction, Gemini study points + interactive multiple-choice quiz, PyAutoGUI browser automation, JSON cache, polished HTMX frontend | No bookmarklet yet |
-| 📄 Study Buddy | 🟡 **Stub** | Frontend shell (drag-drop, loading spinner, quiz container), router stubs, Alpine.js state | `services/pdf_parser.py` is a stub, `routers/study_buddy.py` returns placeholder HTML, no Gemini quiz generation |
+| 📄 Study Buddy | **✅ Complete** | Full PDF extraction (PyMuPDF), Gemini concept breakdown + study plan engine, complexity scoring + time estimation, prerequisite ordering, streak tracking, exam scheduling, interactive quiz with Gemini explanations, camera capture + image upload with direct multimodal Gemini processing, dark monochrome frontend | — |
 | 🎙️ Lecture Note-Taker | 🟡 **Stub** | Frontend shell (recording button, timer, notes/flags panels), WebSocket endpoint stub | `services/audio_processor.py` is stub, no audio streaming, no Gemini multimodal integration |
 
 ### Dashboard Description Extraction Flow
@@ -124,10 +123,9 @@ GET  /dashboard/debug/sample-raw         → Return raw sample HTML (for fronten
 
 Server terminal prints full description text after grab. Browser Chrome console gets a brief summary (titles + char counts).
 
-### Stubs to Fill (when switching branches)
+### Stub to Fill
 
-1. **Study Buddy:** Implement `services/pdf_parser.py` with PyMuPDF, then wire `routers/study_buddy.py` POST handlers to call `ask_gemini` for quiz generation and answer explanation. The frontend is fully ready.
-2. **Lecture Note-Taker:** Implement `services/audio_processor.py` for audio chunking, connect WebSocket in `routers/lecture.py` to Gemini's streaming multimodal API, push real-time notes back as JSON. The frontend has the WebSocket connection pattern and Alpine.js state ready.
+1. **Lecture Note-Taker:** Implement `services/audio_processor.py` for audio chunking, connect WebSocket in `routers/lecture.py` to Gemini's streaming multimodal API, push real-time notes back as JSON. The frontend has the WebSocket connection pattern and Alpine.js state ready.
 
 ---
 
@@ -347,6 +345,7 @@ mlh2026/
 ├── services/
 │   ├── gemini.py           # Gemini API client (shared)
 │   ├── pdf_parser.py       # PDF text extraction
+│   ├── study_plan.py       # Study plan engine (complexity scoring, prerequisite chains, exam scheduling)
 │   ├── moodle_scraper.py   # Moodle parsing logic
 │   └── audio_processor.py  # Audio chunking, streaming helpers
 │

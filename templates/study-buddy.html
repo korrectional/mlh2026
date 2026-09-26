@@ -51,8 +51,72 @@
             mode: 'plan',
             step: 0,
             steps: {
-                plan: ['Reading your PDF', 'Mapping the concepts', 'Scoring complexity', 'Writing your lessons'],
-                quiz: ['Reading your PDF', 'Finding the key concepts', 'Writing questions', 'Checking the answer key'],
+                plan: ['Reading your material', 'Mapping the concepts', 'Scoring complexity', 'Writing your lessons'],
+                quiz: ['Reading your material', 'Finding the key concepts', 'Writing questions', 'Checking the answer key'],
+            },
+            // ── Camera state ──
+            cameraOpen: false,
+            cameraStream: null,
+            cameraSnapshot: null,
+            capturing: false,
+            imgFileName: '',
+            async openCamera() {
+                try {
+                    this.cameraStream = await navigator.mediaDevices.getUserMedia({
+                        video: { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 } }
+                    });
+                    this.cameraOpen = true;
+                    this.cameraSnapshot = null;
+                    this.$nextTick(() => {
+                        this.$refs.video.srcObject = this.cameraStream;
+                    });
+                } catch (e) {
+                    alert('Could not open camera: ' + e.message);
+                }
+            },
+            closeCamera() {
+                if (this.cameraStream) {
+                    this.cameraStream.getTracks().forEach(t => t.stop());
+                    this.cameraStream = null;
+                }
+                this.cameraOpen = false;
+                this.cameraSnapshot = null;
+            },
+            capturePhoto() {
+                const video = this.$refs.video;
+                const canvas = this.$refs.canvas;
+                canvas.width = video.videoWidth;
+                canvas.height = video.videoHeight;
+                canvas.getContext('2d').drawImage(video, 0, 0);
+                this.cameraSnapshot = canvas.toDataURL('image/jpeg', 0.92);
+            },
+            retakePhoto() {
+                this.cameraSnapshot = null;
+            },
+            async submitPhoto() {
+                if (!this.cameraSnapshot || this.capturing) return;
+                this.capturing = true;
+                const blob = await fetch(this.cameraSnapshot).then(r => r.blob());
+                const fd = new FormData();
+                fd.append('file', blob, 'photo.jpg');
+                fd.append('mode', this.mode);
+                const qty = document.querySelector('input[name="num_questions"]:checked');
+                fd.append('num_questions', qty ? qty.value : '5');
+                this.closeCamera();
+                this.capturing = false;
+                document.getElementById('sb-loading').style.display = 'flex';
+                try {
+                    const resp = await fetch('/study-buddy/upload-image', { method: 'POST', body: fd });
+                    const html = await resp.text();
+                    const stage = document.getElementById('sb-stage');
+                    stage.innerHTML = html;
+                    stage.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                    if (window.htmx) htmx.process(stage);
+                } catch (e) {
+                    document.getElementById('sb-stage').innerHTML = '<div class="sb-reveal flex items-start gap-3 rounded-2xl border border-neutral-800 bg-neutral-950 p-5 text-sm text-neutral-300"><span class="sb-mono flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-neutral-700 text-xs text-neutral-400">!</span><p class="pt-0.5 leading-relaxed">Upload failed: ' + e.message + '</p></div>';
+                } finally {
+                    document.getElementById('sb-loading').style.display = 'none';
+                }
             },
             init() { setInterval(() => { this.step = (this.step + 1) % 4 }, 2600) },
         };
@@ -128,9 +192,80 @@
             </label>
         </form>
 
+        <div class="relative flex items-center gap-3">
+            <span class="h-px flex-1 bg-neutral-900"></span>
+            <span class="sb-mono shrink-0 text-[11px] uppercase tracking-[0.2em] text-neutral-600">or snap a photo of a page</span>
+            <span class="h-px flex-1 bg-neutral-900"></span>
+        </div>
+
+        <div class="flex justify-center gap-3">
+            <button type="button" @click="openCamera()"
+                    class="inline-flex items-center gap-2.5 rounded-full border border-neutral-800 bg-neutral-950 px-5 py-3 text-sm text-neutral-200 transition hover:border-neutral-600 hover:bg-neutral-900 hover:text-white">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/>
+                </svg>
+                Take photo
+            </button>
+            <label for="sb-image-file"
+                   class="inline-flex cursor-pointer items-center gap-2.5 rounded-full border border-neutral-800 bg-neutral-950 px-5 py-3 text-sm text-neutral-200 transition hover:border-neutral-600 hover:bg-neutral-900 hover:text-white">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/>
+                </svg>
+                Upload image
+            </label>
+            <form id="sb-image-upload"
+                  hx-post="/study-buddy/upload-image"
+                  hx-encoding="multipart/form-data"
+                  hx-trigger="change"
+                  hx-target="#sb-stage"
+                  hx-swap="innerHTML show:top"
+                  hx-indicator="#sb-loading"
+                  class="sr-only">
+                <input id="sb-image-file" type="file" name="file" accept="image/*" capture="environment" class="sr-only">
+                <input type="hidden" name="mode" :value="mode">
+                <input type="hidden" name="num_questions" :value="document.querySelector('input[name=&quot;num_questions&quot;]:checked')?.value || '5'">
+            </form>
+        </div>
+
         <div id="sb-loading" class="flex-col items-center gap-4 py-6">
             <div class="h-7 w-7 animate-spin rounded-full border-[1.5px] border-neutral-800 border-t-white"></div>
-            <p class="sb-mono text-xs uppercase tracking-[0.2em] text-neutral-400" x-text="steps[mode][step] + '…'">Reading your PDF…</p>
+            <p class="sb-mono text-xs uppercase tracking-[0.2em] text-neutral-400" x-text="steps[mode][step] + '&hellip;'">Reading your material&hellip;</p>
+        </div>
+
+        <!-- Camera modal -->
+        <div x-show="cameraOpen" x-cloak
+             class="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4"
+             @keydown.escape.window="closeCamera()">
+            <div class="w-full max-w-lg space-y-5">
+                <div class="relative overflow-hidden rounded-3xl bg-neutral-950">
+                    <!-- live view -->
+                    <video x-ref="video" x-show="!cameraSnapshot" autoplay playsinline
+                           class="w-full aspect-[4/3] object-cover"></video>
+                    <!-- captured frame -->
+                    <img x-show="cameraSnapshot" :src="cameraSnapshot"
+                         class="w-full aspect-[4/3] object-contain bg-neutral-950">
+                    <canvas x-ref="canvas" class="hidden"></canvas>
+                </div>
+                <div class="flex items-center justify-center gap-3">
+                    <button x-show="!cameraSnapshot" @click="capturePhoto()"
+                            class="rounded-full bg-white px-6 py-3 text-sm font-medium text-black transition hover:bg-neutral-200">
+                        <svg class="inline-block mr-2" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3"/></svg>
+                        Capture
+                    </button>
+                    <button x-show="cameraSnapshot" @click="retakePhoto()"
+                            class="rounded-full border border-neutral-700 px-5 py-3 text-sm text-neutral-200 transition hover:border-neutral-500 hover:text-white">
+                        Retake
+                    </button>
+                    <button x-show="cameraSnapshot" @click="submitPhoto()" :disabled="capturing"
+                            class="rounded-full bg-white px-6 py-3 text-sm font-medium text-black transition hover:bg-neutral-200 disabled:opacity-50">
+                        <span x-text="capturing ? 'Processing&hellip;' : 'Use this photo'"></span>
+                    </button>
+                    <button @click="closeCamera()"
+                            class="rounded-full border border-neutral-700 px-5 py-3 text-sm text-neutral-200 transition hover:border-neutral-500 hover:text-white">
+                        Cancel
+                    </button>
+                </div>
+            </div>
         </div>
 
         <div id="sb-stage">{{ stage_html | safe }}</div>

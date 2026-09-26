@@ -19,7 +19,7 @@ from datetime import datetime as _datetime
 
 from services.moodle_scraper import parse_dashboard, extract_assignment_detail, enrich_assignments_with_descriptions
 from services.gemini import ask_gemini, ask_gemini_structured
-from services.moodle_browser import open_dashboard_and_grab, grab_moodle_page, grab_assignment_descriptions
+from services.moodle_browser import open_dashboard_and_grab, grab_moodle_page, grab_assignment_descriptions, grab_active_page
 from routers.quiz_helpers import parse_quiz_questions, render_interactive_quiz
 
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
@@ -168,112 +168,6 @@ async def fetch_moodle():
         '''
 
 
-@router.post("/grab", response_class=HTMLResponse)
-async def grab_moodle():
-    """
-    Grab the HTML from the user's active browser tab using pyautogui.
-    The user should be on the Moodle dashboard tab when this runs.
-    """
-    try:
-        html = grab_active_page()
-
-        if not html or len(html) < 100:
-            return '''
-            <div class="p-4 bg-yellow-50 border border-yellow-200 rounded-lg text-sm">
-                <p class="font-semibold text-yellow-800">😕 Didn't get much content</p>
-                <p class="text-yellow-700 mt-1">
-                    Make sure you were on the <strong>Moodle dashboard tab</strong>
-                    when the grab happened. Try again.
-                </p>
-            </div>
-            '''
-
-        # Parse the grabbed HTML
-        assignments = parse_dashboard(html)
-
-        if not assignments:
-            return '''
-            <div class="p-4 bg-yellow-50 border border-yellow-200 rounded-lg text-sm">
-                <p class="font-semibold text-yellow-800">📋 Page grabbed but no assignments found</p>
-                <p class="text-yellow-700 mt-1">
-                    Got {} chars of HTML but couldn't find any assignments.
-                    Make sure you're on the <strong>Moodle Dashboard → Timeline</strong> view.
-                </p>
-            </div>
-            '''.format(len(html))
-
-        # Render assignment cards (same as inspect endpoint output)
-        sorted_assignments = sorted(
-            assignments,
-            key=lambda a: (0 if a.get("overdue") else 1, a.get("due_date", "")),
-        )
-
-        cards_html = ""
-        for i, a in enumerate(sorted_assignments):
-            overdue_badge = (
-                '<span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800">Overdue</span>'
-                if a.get("overdue") else ""
-            )
-            due = a.get("due_date", "No date") or "No date"
-            course = a.get("course", "") or "Unknown course"
-            title = a.get("title", "Untitled")
-            url = a.get("url", "")
-
-            cards_html += f'''
-            <div class="bg-white rounded-xl border p-5 hover:shadow-md transition assignment-card"
-                 x-data="{{ open: false }}" id="assignment-{i}">
-
-                <div class="flex items-start justify-between gap-4">
-                    <div class="min-w-0 flex-1">
-                        <div class="flex items-center gap-2 flex-wrap">
-                            <h3 class="text-base font-semibold text-gray-900 truncate">{title}</h3>
-                            {overdue_badge}
-                        </div>
-                        <p class="text-sm text-gray-500 mt-0.5">
-                            <span class="inline-flex items-center gap-1">📚 {course}</span>
-                            <span class="mx-2">·</span>
-                            <span class="inline-flex items-center gap-1">📅 {due}</span>
-                        </p>
-                    </div>
-                </div>
-
-                <div class="mt-3 flex gap-2 flex-wrap">
-                    <button hx-post="/dashboard/study-points" hx-target="#assignment-{i} .results-area"
-                            hx-vals='{{ "assignment": "{title}", "course": "{course}", "due_date": "{due}" }}'
-                            class="px-3 py-1.5 text-xs font-medium rounded-lg bg-brand-50 text-brand-700 hover:bg-brand-100 border border-brand-200 transition">
-                        📚 Study Points
-                    </button>
-                    <button hx-post="/dashboard/quiz" hx-target="#assignment-{i} .results-area"
-                            hx-vals='{{ "assignment": "{title}", "course": "{course}", "due_date": "{due}" }}'
-                            class="px-3 py-1.5 text-xs font-medium rounded-lg bg-green-50 text-green-700 hover:bg-green-100 border border-green-200 transition">
-                        📝 Generate Quiz
-                    </button>
-                </div>
-
-                <div class="results-area mt-3"></div>
-            </div>
-            '''
-
-        return f'''
-        <div class="space-y-4">
-            <div class="flex items-center justify-between">
-                <h2 class="text-lg font-bold text-gray-900">
-                    📋 Found {len(assignments)} assignment{'s' if len(assignments) != 1 else ''}
-                </h2>
-                <span class="text-xs text-gray-400">Grabbed from your browser</span>
-            </div>
-            {cards_html}
-        </div>
-        '''
-
-    except Exception as e:
-        return f'''
-        <div class="p-4 bg-red-50 border border-red-200 rounded-lg text-sm">
-            <p class="font-semibold text-red-800">❌ Grab failed</p>
-            <p class="text-red-700 mt-1">{e}</p>
-            <p class="text-red-600 text-xs mt-2">Make sure no other app is stealing focus during the grab.</p>
-        </div>
-        '''
 
 
 @router.post("/bookmarklet-capture")
@@ -408,6 +302,21 @@ async def grab_moodle():
             <p class="text-red-600 text-xs mt-2">Make sure no other app is stealing focus during the grab.</p>
         </div>
         '''
+
+
+
+# ── Clear cached data ────────────────────────────────────────────────
+
+@router.post("/clear", response_class=HTMLResponse)
+async def clear_cache():
+    """Delete the cache file and clear results from the dashboard."""
+    if _CACHE_FILE.exists():
+        _CACHE_FILE.unlink()
+        print("  🗑️  Cache cleared")
+    return """<div class="p-4 bg-gray-50 border border-gray-200 rounded-lg text-sm text-center">
+        <p class="font-semibold text-gray-700">🗑️ Cache cleared</p>
+        <p class="text-gray-500 mt-1">Grab your assignments again to start fresh.</p>
+    </div>"""
 
 
 # ── Raw scrape — for testing without Gemini ─────────────────────────
@@ -979,16 +888,7 @@ def _render_cards(assignments: list[dict]) -> str:
         </div>
         '''
 
-    return f'''
-    <div class="space-y-4">
-        <div class="flex items-center justify-between">
-            <h2 class="text-lg font-bold text-gray-900">
-                📋 Found {len(assignments)} assignment{'s' if len(assignments) != 1 else ''}
-            </h2>
-        </div>
-        {cards_html}
-    </div>
-    '''
+    return cards_html
 
 
 # ── Print descriptions to server console ──────────────────────────────
