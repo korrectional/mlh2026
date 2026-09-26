@@ -28,6 +28,10 @@
     }
     .sb-glow { background: radial-gradient(520px circle at 50% 0%, rgba(255, 255, 255, 0.08), transparent 70%); }
     #sb-stage { scroll-margin-top: 72px; }
+    .sb-fade {
+        -webkit-mask-image: radial-gradient(ellipse closest-side at 50% 50%, #000 45%, transparent 100%);
+        mask-image: radial-gradient(ellipse closest-side at 50% 50%, #000 45%, transparent 100%);
+    }
     input[type="date"]::-webkit-calendar-picker-indicator { filter: invert(1); opacity: 0.6; }
 
     #sb-loading { display: none; }
@@ -89,10 +93,9 @@
                     Study Buddy scores how complex your material is, estimates how long it takes to learn, and turns it into daily sessions that fit the time you actually have.
                 </p>
             </div>
-            <figure class="relative mx-auto w-full max-w-xs overflow-hidden rounded-3xl border border-neutral-800 bg-neutral-950 sm:max-w-none">
+            <figure class="relative mx-auto w-full max-w-xs sm:max-w-none">
                 <img src="/static/img/study-library.png" alt="A student reading between library shelves"
-                     class="h-72 w-full object-cover object-[center_30%] grayscale sm:h-80">
-                <div aria-hidden="true" class="absolute inset-0 bg-gradient-to-t from-[#0a0a0a]/80 via-transparent to-transparent"></div>
+                     class="sb-fade h-72 w-full object-cover object-[center_30%] grayscale sm:h-80">
             </figure>
         </header>
 
