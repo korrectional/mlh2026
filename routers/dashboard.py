@@ -748,6 +748,13 @@ def _render_markdown(text: str) -> str:
             text_part = stripped.split(". ", 1)[1] if ". " in stripped else stripped
             html_lines.append(f"<li>{_inline_html(text_part)}</li>")
 
+        # Horizontal rule (---, ***, ___) = divider, not literal text
+        elif len(stripped) >= 3 and set(stripped) <= {"-"} or stripped in ("***", "___"):
+            if in_list:
+                html_lines.append("</ul>")
+                in_list = False
+            html_lines.append("<hr class='my-4 border-neutral-800'>")
+
         # Empty line = paragraph break
         elif not stripped:
             if in_list:
