@@ -1,0 +1,56 @@
+<div class="space-y-4">
+    <div class="sticky top-14 z-40 -mx-4 bg-[#060b1a]/85 px-4 pb-4 pt-5 backdrop-blur-md">
+        <div class="flex items-end justify-between gap-6">
+            <div class="min-w-0">
+                <p class="sb-mono truncate text-[11px] uppercase tracking-[0.2em] text-neutral-500">{{ filename }}</p>
+                <h2 class="mt-1 truncate text-xl font-semibold tracking-tight text-white">{{ title }}</h2>
+            </div>
+            <span id="sb-score" class="sb-mono shrink-0 text-xs text-neutral-400">00 / {{ '%02d'|format(questions|length) }}</span>
+        </div>
+        <div class="mt-4 h-px w-full bg-neutral-800">
+            <div id="sb-progress" class="h-px bg-white transition-all duration-700 ease-out" style="width: 0%"></div>
+        </div>
+    </div>
+
+    {% for q in questions %}
+    {% set i = loop.index0 %}
+    <form id="sb-q-{{ i }}"
+          hx-post="/study-buddy/answer"
+          hx-target="this"
+          hx-swap="outerHTML"
+          hx-disabled-elt="find button"
+          class="sb-reveal space-y-5 rounded-2xl border border-neutral-800 bg-neutral-950 p-6 transition-colors hover:border-neutral-700"
+          style="animation-delay: {{ i * 60 }}ms">
+        <div class="flex items-center gap-3">
+            <span class="sb-mono text-xs text-neutral-500">{{ '%02d'|format(i + 1) }}</span>
+            <span class="h-px flex-1 bg-neutral-900"></span>
+            <span class="sb-mono rounded-full border border-neutral-800 px-2.5 py-0.5 text-[10px] uppercase tracking-[0.16em] text-neutral-500">{{ q.topic }}</span>
+        </div>
+        <p class="text-[17px] leading-relaxed text-neutral-100">{{ q.question }}</p>
+
+        <div class="grid gap-2">
+            {% for opt in q.options %}
+            <label class="flex cursor-pointer items-start gap-3 rounded-xl border border-neutral-800 bg-neutral-900/30 p-3.5 transition hover:border-neutral-600 hover:bg-neutral-900 has-[:checked]:border-white has-[:checked]:bg-neutral-900 has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-white/30">
+                <input type="radio" name="choice" value="{{ loop.index0 }}" required class="peer sr-only">
+                <span class="sb-mono flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-neutral-700 text-[11px] text-neutral-400 transition peer-checked:border-white peer-checked:bg-white peer-checked:text-black">{{ "ABCD"[loop.index0] }}</span>
+                <span class="pt-0.5 text-sm leading-relaxed text-neutral-300 peer-checked:text-white">{{ opt }}</span>
+            </label>
+            {% endfor %}
+        </div>
+
+        <div class="flex justify-end">
+            <button class="inline-flex items-center gap-2 rounded-full bg-white px-5 py-2 text-sm font-medium text-black transition hover:bg-neutral-200 disabled:opacity-50">
+                <span class="sb-idle">Check answer</span>
+                <span class="sb-busy">Checking…</span>
+                <svg class="sb-idle" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m13 6 6 6-6 6"/></svg>
+            </button>
+        </div>
+
+        {# Last, so the space-y margin doesn't land on the first visible row. #}
+        <input type="hidden" name="quiz_id" value="{{ quiz_id }}">
+        <input type="hidden" name="q_index" value="{{ i }}">
+    </form>
+    {% endfor %}
+
+    <div id="sb-summary"></div>
+</div>

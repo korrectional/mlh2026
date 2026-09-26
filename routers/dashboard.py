@@ -14,6 +14,7 @@ from pathlib import Path
 
 from services.moodle_scraper import parse_dashboard, extract_assignment_detail
 from services.gemini import ask_gemini, ask_gemini_structured
+from services.moodle_browser import grab_moodle_page
 
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
 
@@ -86,7 +87,116 @@ async def debug_sample():
     """
 
 
-# ── Raw scrape (JSON) — for testing without Gemini ───────────────────
+# ── Grab (pyautogui flow) ──────────────────────────────────────────────
+
+@router.post("/grab", response_class=HTMLResponse)
+async def grab_moodle():
+    """
+    Open a new tab, navigate to Moodle, wait for load, then grab the HTML
+    via pyautogui keyboard shortcuts.
+    """
+    from services.moodle_browser import grab_moodle_page as _grab
+    try:
+        html = _grab(url="https://moodle-courses2527.wolfware.ncsu.edu/my/")
+
+        if not html or len(html) < 100:
+            return '''
+            <div class="p-4 bg-yellow-50 border border-yellow-200 rounded-lg text-sm">
+                <p class="font-semibold text-yellow-800">😕 Didn't get much content</p>
+                <p class="text-yellow-700 mt-1">
+                    The page might not have loaded in time, or you need to
+                    log into Moodle first. Try again.
+                </p>
+            </div>'''
+
+        # Parse the grabbed HTML
+        assignments = parse_dashboard(html)
+
+        if not assignments:
+            return '''
+            <div class="p-4 bg-yellow-50 border border-yellow-200 rounded-lg text-sm">
+                <p class="font-semibold text-yellow-800">📋 Page grabbed but no assignments found</p>
+                <p class="text-yellow-700 mt-1">
+                    Got {} chars of page content but couldn't find any assignments.
+                    Make sure you're on the <strong>Moodle Dashboard → Timeline</strong> view.
+                </p>
+            </div>'''.format(len(html))
+
+        # Render assignment cards
+        sorted_assignments = sorted(
+            assignments,
+            key=lambda a: (0 if a.get("overdue") else 1, _parse_date(a.get("due_date", ""))),
+        )
+
+        cards_html = ""
+        for i, a in enumerate(sorted_assignments):
+            overdue_badge = (
+                '<span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800">Overdue</span>'
+                if a.get("overdue") else ""
+            )
+            due = _fmt_date(a.get("due_date", ""))
+            course = a.get("course", "") or "Unknown course"
+            title = a.get("title", "Untitled")
+            url = a.get("url", "")
+
+            cards_html += f'''
+            <div class="bg-white rounded-xl border p-5 hover:shadow-md transition assignment-card"
+                 x-data="{{ open: false }}" id="assignment-{i}">
+
+                <div class="flex items-start justify-between gap-4">
+                    <div class="min-w-0 flex-1">
+                        <div class="flex items-center gap-2 flex-wrap">
+                            <h3 class="text-base font-semibold text-gray-900 truncate">{title}</h3>
+                            {overdue_badge}
+                        </div>
+                        <p class="text-sm text-gray-500 mt-0.5">
+                            <span class="inline-flex items-center gap-1">📚 {course}</span>
+                            <span class="mx-2">·</span>
+                            <span class="inline-flex items-center gap-1">📅 {due}</span>
+                        </p>
+                    </div>
+                </div>
+
+                <div class="mt-3 flex gap-2 flex-wrap">
+                    <button hx-post="/dashboard/study-points" hx-target="#assignment-{i} .results-area"
+                            hx-vals='{{ "assignment": "{title}", "course": "{course}", "due_date": "{_fmt_date(a.get('due_date', ''))}" }}'
+                            class="px-3 py-1.5 text-xs font-medium rounded-lg bg-brand-50 text-brand-700 hover:bg-brand-100 border border-brand-200 transition">
+                        📚 Study Points
+                    </button>
+                    <button hx-post="/dashboard/quiz" hx-target="#assignment-{i} .results-area"
+                            hx-vals='{{ "assignment": "{title}", "course": "{course}", "due_date": "{_fmt_date(a.get('due_date', ''))}" }}'
+                            class="px-3 py-1.5 text-xs font-medium rounded-lg bg-green-50 text-green-700 hover:bg-green-100 border border-green-200 transition">
+                        📝 Generate Quiz
+                    </button>
+                </div>
+
+                <div class="results-area mt-3"></div>
+            </div>
+            '''
+
+        return f'''
+        <div class="space-y-4">
+            <div class="flex items-center justify-between">
+                <h2 class="text-lg font-bold text-gray-900">
+                    📋 Found {len(assignments)} assignment{'s' if len(assignments) != 1 else ''}
+                </h2>
+                <span class="text-xs text-gray-400">Grabbed from your browser</span>
+            </div>
+            {cards_html}
+        </div>
+        '''
+
+    except Exception as e:
+        return f'''
+        <div class="p-4 bg-red-50 border border-red-200 rounded-lg text-sm">
+            <p class="font-semibold text-red-800">❌ Grab failed</p>
+            <p class="text-red-700 mt-1">{e}</p>
+            <p class="text-red-600 text-xs mt-2">Make sure no other app is stealing focus during the grab.</p>
+        </div>
+        '''
+
+
+# ── Raw scrape — for testing without Gemini ─────────────────────────
 
 # ── Debug: return raw sample HTML ──────────────────────────────────
 
@@ -110,7 +220,7 @@ async def scrape_only(dashboard_html: str = Form(...)):
         overdue_badge = '🔥' if a.get('overdue') else ''
         rows += f"""
         <tr class="{"bg-red-50/50" if a.get('overdue') else ""}">
-            <td class="px-3 py-2 text-sm font-medium">{a.get('title', '')} {overdue_badge}</td>
+            <td class="px-3 py-2 text-sm font-medium">{f'<a href="{a.get("url", "")}" target="_blank" class="hover:text-brand-600 transition">{a.get("title", "")}</a>' if a.get('url') else a.get('title', '')} {overdue_badge}</td>
             <td class="px-3 py-2 text-sm text-gray-600">{a.get('course', '')}</td>
             <td class="px-3 py-2 text-sm text-gray-600">{a.get('due_date', '')}</td>
             <td class="px-3 py-2 text-sm">
@@ -165,10 +275,10 @@ async def inspect_dashboard(dashboard_html: str = Form(...)):
         </div>
         """
 
-    # Sort: overdue first, then by due date approximation
+    # Sort: overdue first, then by parsed date
     sorted_assignments = sorted(
         assignments,
-        key=lambda a: (0 if a.get("overdue") else 1, a.get("due_date", "")),
+        key=lambda a: (0 if a.get("overdue") else 1, _parse_date(a.get("due_date", ""))),
     )
 
     cards_html = ""
@@ -177,7 +287,7 @@ async def inspect_dashboard(dashboard_html: str = Form(...)):
             '<span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800">Overdue</span>'
             if a.get("overdue") else ""
         )
-        due = a.get("due_date", "No date") or "No date"
+        due = _fmt_date(a.get("due_date", ""))
         course = a.get("course", "") or "Unknown course"
         title = a.get("title", "Untitled")
         url = a.get("url", "")
@@ -189,7 +299,7 @@ async def inspect_dashboard(dashboard_html: str = Form(...)):
             <div class="flex items-start justify-between gap-4">
                 <div class="min-w-0 flex-1">
                     <div class="flex items-center gap-2 flex-wrap">
-                        <h3 class="text-base font-semibold text-gray-900 truncate">{title}</h3>
+                        <h3 class="text-base font-semibold text-gray-900 truncate">{f'<a href="{url}" target="_blank" class="hover:text-brand-600 transition">{title}</a>' if url else title}</h3>
                         {overdue_badge}
                     </div>
                     <p class="text-sm text-gray-500 mt-0.5">
@@ -213,6 +323,12 @@ async def inspect_dashboard(dashboard_html: str = Form(...)):
                         class="px-3 py-1.5 text-xs font-medium rounded-lg bg-green-50 text-green-700 hover:bg-green-100 border border-green-200 transition">
                     📝 Generate Quiz
                 </button>
+                {"""<button hx-post="/dashboard/grab-instructions" hx-target="#assignment-{i} .results-area"
+                        hx-vals='{{"url": "{_escape_json(url)}", "title": "{_escape_json(title)}"}}'
+                        hx-indicator="#spinner-{i}"
+                        class="px-3 py-1.5 text-xs font-medium rounded-lg bg-purple-50 text-purple-700 hover:bg-purple-100 border border-purple-200 transition">
+                    📥 Grab Instructions
+                </button>""" if url else ""}
                 <div id="spinner-{i}" class="htmx-indicator">
                     <div class="w-4 h-4 border-2 border-brand-200 border-t-brand-600 rounded-full animate-spin"></div>
                 </div>
@@ -232,6 +348,170 @@ async def inspect_dashboard(dashboard_html: str = Form(...)):
         {cards_html}
     </div>
     """
+
+
+# ── Grab instructions from an assignment page ──────────────────────────
+
+import re as _re
+from bs4 import BeautifulSoup
+
+
+def _extract_instructions(html: str) -> dict:
+    """
+    Parse an assignment detail page for instructions, Google Doc links,
+    and other useful content.
+
+    Returns a dict with:
+      - instructions: plain text of the assignment description
+      - doc_links: list of Google Doc URLs found
+      - other_links: list of other external links
+    """
+    soup = BeautifulSoup(html, "html.parser")
+
+    # Look for the main content area (Moodle assignment description)
+    description_el = soup.select_one(
+        ".no-overflow, #intro, [data-region='assignment-info'], "
+        ".activity-description, .generalbox, .box.py-3"
+    )
+    instructions = description_el.get_text("\n", strip=True) if description_el else ""
+
+    # Fallback: grab all visible text from the page
+    if not instructions or len(instructions) < 50:
+        body = soup.find("body")
+        if body:
+            # Remove script, style, nav, header, footer noise
+            for tag in body.select("script, style, nav, header, footer, .navbar, .footer, .breadcrumb"):
+                tag.decompose()
+            instructions = body.get_text("\n", strip=True)
+            # Truncate to first 8000 chars
+            instructions = instructions[:8000]
+
+    # Find all links
+    doc_links = []
+    other_links = []
+    for a_tag in soup.find_all("a", href=True):
+        href = a_tag["href"]
+        text = a_tag.get_text(strip=True)
+        if "docs.google.com" in href or "google.com/document" in href:
+            doc_links.append({"url": href, "text": text or "Google Doc"})
+        elif href.startswith("http") and "moodle" not in href and "wolfware" not in href:
+            other_links.append({"url": href, "text": text or href[:60]})
+
+    return {
+        "instructions": instructions[:5000],
+        "doc_links": doc_links[:10],
+        "other_links": other_links[:10],
+    }
+
+
+@router.post("/grab-instructions", response_class=HTMLResponse)
+async def grab_instructions(
+    url: str = Form(...),
+    title: str = Form(""),
+):
+    """
+    Navigate to an assignment URL via PyAutoGUI, grab the page content,
+    and extract instructions / Google Doc links.
+    """
+    try:
+        html = grab_moodle_page(url, load_wait=4)
+
+        if not html or len(html) < 100:
+            return f'''
+            <div class="p-4 bg-yellow-50 border border-yellow-200 rounded-lg text-sm mt-3">
+                <p class="font-semibold text-yellow-800">😕 Didn't get much content</p>
+                <p class="text-yellow-700 mt-1">
+                    The assignment page might not have loaded in time.
+                    Try again and make sure your browser is focused.
+                </p>
+            </div>
+            '''
+
+        parsed = _extract_instructions(html)
+        instructions = parsed["instructions"]
+        doc_links = parsed["doc_links"]
+        other_links = parsed["other_links"]
+
+        if not instructions and not doc_links:
+            return f'''
+            <div class="p-4 bg-yellow-50 border border-yellow-200 rounded-lg text-sm mt-3">
+                <p class="font-semibold text-yellow-800">📄 Page grabbed but no instructions found</p>
+                <p class="text-yellow-700 mt-1">
+                    Grabbed {len(html)} characters but couldn't extract specific instructions.
+                    <a href="{_escape_json(url)}" target="_blank" class="text-brand-600 hover:underline">Open manually ↗</a>
+                </p>
+            </div>
+            '''
+
+        # Build the response
+        parts = []
+
+        # Google Doc links
+        if doc_links:
+            doc_items = "".join(
+                f'<li><a href="{d["url"]}" target="_blank" class="text-brand-600 hover:underline">📄 {_escape_html(d["text"])}</a></li>'
+                for d in doc_links
+            )
+            parts.append(f'''
+                <div class="mb-3">
+                    <p class="font-semibold text-sm text-gray-800 mb-1">📎 Reference Documents</p>
+                    <ul class="list-disc list-inside space-y-0.5 text-sm">{doc_items}</ul>
+                </div>
+            ''')
+
+        # Other links
+        if other_links:
+            other_items = "".join(
+                f'<li><a href="{l["url"]}" target="_blank" class="text-brand-600 hover:underline">🔗 {_escape_html(l["text"])}</a></li>'
+                for l in other_links
+            )
+            parts.append(f'''
+                <div class="mb-3">
+                    <p class="font-semibold text-sm text-gray-800 mb-1">🔗 Other Links</p>
+                    <ul class="list-disc list-inside space-y-0.5 text-sm">{other_items}</ul>
+                </div>
+            ''')
+
+        # Instructions text
+        if instructions:
+            # Truncate to 2000 chars for display
+            display_text = instructions[:2000]
+            if len(instructions) > 2000:
+                display_text += "..."
+            parts.append(f'''
+                <div>
+                    <p class="font-semibold text-sm text-gray-800 mb-1">📝 Instructions</p>
+                    <div class="text-sm text-gray-700 whitespace-pre-wrap max-h-60 overflow-y-auto bg-gray-50 rounded p-3">{_escape_html(display_text)}</div>
+                </div>
+            ''')
+
+        content = "\n".join(parts)
+
+        return f'''
+        <div class="p-4 bg-blue-50 border border-blue-200 rounded-lg text-sm mt-3">
+            <p class="font-semibold text-blue-800 mb-2 flex items-center gap-2">
+                📥 Instructions Grabbed
+                <span class="text-xs font-normal text-blue-600">for {_escape_html(title)}</span>
+            </p>
+            {content}
+            <p class="text-xs text-blue-500 mt-2">
+                Grabbed {len(html)} chars from assignment page.
+                <a href="{_escape_json(url)}" target="_blank" class="hover:underline">Open in tab ↗</a>
+            </p>
+        </div>
+        '''
+
+    except Exception as e:
+        return f'''
+        <div class="p-4 bg-red-50 border border-red-200 rounded-lg text-sm mt-3">
+            <p class="font-semibold text-red-800">❌ Grab failed</p>
+            <p class="text-red-700 mt-1">{_escape_html(str(e))}</p>
+            <p class="text-red-600 text-xs mt-2">
+                Make sure no other app is stealing focus during the grab.
+                <a href="{_escape_json(url)}" target="_blank" class="hover:underline">Open manually ↗</a>
+            </p>
+        </div>
+        '''
 
 
 # ── Study points for a single assignment ──────────────────────────────
@@ -423,3 +703,44 @@ def _inline_html(text: str) -> str:
     escaped = re.sub(r"`(.+?)`", r"<code class='bg-gray-100 px-1 rounded text-xs'>\1</code>", escaped)
 
     return escaped
+
+
+def _fmt_date(raw: str) -> str:
+    """
+    Format a due date string for display — strips day-of-week and trailing time.
+
+    Input:  "Sunday, September 27, 2026 23:59"
+    Output: "September 27, 2026"
+    """
+    if not raw:
+        return "No date"
+    import re as _re
+    cleaned = _re.sub(r"^(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday),\s*", "", raw, flags=_re.IGNORECASE)
+    cleaned = _re.sub(r"\s+\d{1,2}:\d{2}\s*(AM|PM)?$", "", cleaned, flags=_re.IGNORECASE)
+    return cleaned.strip() or "No date"
+
+
+def _parse_date(raw: str) -> str:
+    """Parse a due date into YYYY-MM-DD for sorting."""
+    import re as _re
+    from datetime import datetime
+    if not raw:
+        return ""
+    cleaned = _re.sub(r"^(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday),\s*", "", raw, flags=_re.IGNORECASE)
+    cleaned = _re.sub(r"\s+\d{1,2}:\d{2}\s*(AM|PM)?$", "", cleaned, flags=_re.IGNORECASE)
+    cleaned = cleaned.strip()
+    if not cleaned:
+        return ""
+    for fmt in ("%B %d, %Y", "%b %d, %Y", "%m/%d/%Y"):
+        try:
+            dt = datetime.strptime(cleaned, fmt)
+            return dt.strftime("%Y-%m-%d")
+        except ValueError:
+            continue
+    return cleaned
+
+
+def _escape_html(text: str) -> str:
+    """Escape a string for safe embedding in HTML."""
+    import html as html_mod
+    return html_mod.escape(text)

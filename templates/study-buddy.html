@@ -3,75 +3,156 @@
 {% block title %}Study Buddy{% endblock %}
 
 {% block content %}
-<div x-data="studyBuddy()" class="space-y-6">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@300..700&family=Geist+Mono:wght@400..600&display=swap">
+<style>
+    /* Dark blue monotone theme, scoped to this page: overrides the shared light shell without editing base.html. */
+    :root { color-scheme: dark; }
+    [x-cloak] { display: none !important; }
+    body.bg-gray-50 { background: #060b1a; color: #c3d3f5; font-family: "Geist", ui-sans-serif, system-ui, sans-serif; }
+    ::selection { background: #e3ecff; color: #060b1a; }
+    nav.bg-white { background: rgba(6, 11, 26, 0.72); border-color: #16203a; box-shadow: none; backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); }
+    nav.bg-white a { filter: grayscale(1); }
+    nav a.text-brand-600, nav a.text-brand-600:hover { color: #e3ecff; }
+    nav a.text-gray-600 { color: #7890c8; }
+    nav a.text-gray-600:hover { color: #e3ecff; background: #131d36; }
+    nav a.text-gray-600[href="/study-buddy"] { color: #e3ecff; background: #131d36; }
 
-    <!-- Header -->
-    <div>
-        <h1 class="text-2xl font-bold">📄 Study Buddy from PDFs</h1>
-        <p class="text-sm text-gray-500">Upload lecture slides or a textbook chapter — Gemini generates a practice quiz and explains wrong answers.</p>
-    </div>
+    .sb-mono { font-family: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .sb-grid {
+        background-image: radial-gradient(rgba(147, 178, 255, 0.13) 1px, transparent 1px);
+        background-size: 22px 22px;
+        -webkit-mask-image: radial-gradient(ellipse 60% 70% at 50% 0%, #000 20%, transparent 75%);
+        mask-image: radial-gradient(ellipse 60% 70% at 50% 0%, #000 20%, transparent 75%);
+    }
+    .sb-glow { background: radial-gradient(520px circle at 50% 0%, rgba(96, 140, 255, 0.16), transparent 70%); }
+    #sb-stage { scroll-margin-top: 72px; }
+    input[type="date"]::-webkit-calendar-picker-indicator { filter: invert(1); opacity: 0.6; }
 
-    <!-- Upload area -->
-    <div class="bg-white rounded-xl border p-8 text-center"
-         x-on:dragover.prevent="$el.classList.add('border-brand-500', 'bg-brand-50')"
-         x-on:dragleave.prevent="$el.classList.remove('border-brand-500', 'bg-brand-50')"
-         x-on:drop.prevent="$el.classList.remove('border-brand-500', 'bg-brand-50'); uploadFile($event.dataTransfer.files[0])">
+    #sb-loading { display: none; }
+    #sb-loading.htmx-request { display: flex; }
+    .sb-busy { display: none; }
+    .htmx-request .sb-busy { display: inline; }
+    .htmx-request .sb-idle { display: none; }
 
-        <div class="text-5xl mb-3">📕</div>
-        <p class="text-gray-600 mb-2">Drop a PDF here, or</p>
-        <label class="inline-block px-4 py-2 bg-brand-600 text-white rounded-lg text-sm font-medium cursor-pointer hover:bg-brand-700 transition">
-            Browse Files
-            <input type="file" accept=".pdf" class="hidden" @change="uploadFile($event.target.files[0])">
-        </label>
-        <p class="text-xs text-gray-400 mt-2" x-text="fileName ? 'Selected: ' + fileName : 'Max 20 MB'"></p>
-    </div>
-
-    <!-- Loading spinner (shown during quiz generation) -->
-    <div x-show="loading" class="text-center py-8">
-        <div class="inline-block w-8 h-8 border-4 border-brand-200 border-t-brand-600 rounded-full animate-spin"></div>
-        <p class="text-sm text-gray-500 mt-2">Generating quiz from your PDF...</p>
-    </div>
-
-    <!-- Quiz area (HTMX swaps HTML here) -->
-    <div id="quiz-container" x-show="!loading">
-        {{ quiz_html | default('') | safe }}
-    </div>
-
-</div>
+    @keyframes sb-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+    .sb-reveal { animation: sb-in 0.45s cubic-bezier(0.2, 0.7, 0.2, 1) both; }
+    @keyframes sb-ring { from { stroke-dashoffset: 226.19; } }
+    .sb-ring { animation: sb-ring 1.2s cubic-bezier(0.2, 0.7, 0.2, 1) 0.15s both; }
+    @media (prefers-reduced-motion: reduce) { .sb-reveal, .sb-ring { animation: none; } }
+</style>
 
 <script>
-function studyBuddy() {
-    return {
-        fileName: '',
-        loading: false,
+    // Page-scoped palette: Tailwind's neutral grays become a navy-to-pale-blue scale, and white/black become
+    // pale blue/deep navy, so every partial turns blue without touching base.html or the other tools.
+    (function () {
+        var cfg = window.tailwind && tailwind.config ? tailwind.config : {};
+        var theme = cfg.theme || {};
+        var extend = theme.extend || {};
+        var colors = Object.assign({}, extend.colors || {}, {
+            white: '#e3ecff',
+            black: '#060b1a',
+            neutral: {
+                50: '#f0f5ff', 100: '#e1eafc', 200: '#c3d3f5', 300: '#9fb6e6', 400: '#7890c8', 500: '#5a70a6',
+                600: '#435685', 700: '#2f3f66', 800: '#1f2c4d', 900: '#131d36', 950: '#0b1226',
+            },
+        });
+        tailwind.config = Object.assign({}, cfg, { theme: Object.assign({}, theme, { extend: Object.assign({}, extend, { colors: colors }) }) });
+    })();
 
-        async uploadFile(file) {
-            if (!file || file.type !== 'application/pdf') {
-                alert('Please upload a PDF file.');
-                return;
-            }
-            this.fileName = file.name;
-            this.loading = true;
-            document.getElementById('quiz-container').innerHTML = '';
-
-            const formData = new FormData();
-            formData.append('file', file);
-
-            try {
-                const resp = await fetch('/study-buddy/upload', {
-                    method: 'POST',
-                    body: formData
-                });
-                const html = await resp.text();
-                document.getElementById('quiz-container').innerHTML = html;
-            } catch (err) {
-                document.getElementById('quiz-container').innerHTML =
-                    `<div class="p-4 bg-red-50 text-red-700 rounded">Upload failed: ${err.message}</div>`;
-            } finally {
-                this.loading = false;
-            }
-        }
-    };
-}
+    function studyBuddy() {
+        return {
+            dragging: false,
+            fileName: '',
+            mode: 'plan',
+            step: 0,
+            steps: {
+                plan: ['Reading your PDF', 'Mapping the concepts', 'Scoring complexity', 'Writing your lessons'],
+                quiz: ['Reading your PDF', 'Finding the key concepts', 'Writing questions', 'Checking the answer key'],
+            },
+            init() { setInterval(() => { this.step = (this.step + 1) % 4 }, 2600) },
+        };
+    }
 </script>
+
+<div class="relative">
+    <div aria-hidden="true" class="sb-grid pointer-events-none absolute inset-x-0 -top-8 h-80"></div>
+    <div aria-hidden="true" class="sb-glow pointer-events-none absolute inset-x-0 -top-8 h-80"></div>
+
+    <div class="relative mx-auto max-w-2xl space-y-10 pb-12" x-data="studyBuddy()" @htmx:before-request.window="step = 0">
+
+        <header class="space-y-5 pt-10 text-center">
+            <span class="sb-mono inline-flex items-center gap-2 rounded-full border border-neutral-800 bg-neutral-950/80 px-3 py-1 text-[11px] uppercase tracking-[0.2em] text-neutral-400">
+                <span class="h-1.5 w-1.5 animate-pulse rounded-full bg-neutral-100"></span>
+                Study Buddy
+            </span>
+            <h1 class="text-4xl font-semibold leading-[1.05] tracking-tight text-white sm:text-5xl">
+                Drop your notes.<br><span class="text-neutral-500">Get a plan.</span>
+            </h1>
+            <p class="mx-auto max-w-md leading-relaxed text-neutral-400">
+                Study Buddy scores how complex your material is, estimates how long it takes to learn, and turns it into daily sessions that fit the time you actually have.
+            </p>
+        </header>
+
+        <form id="sb-upload"
+              hx-post="/study-buddy/upload"
+              hx-encoding="multipart/form-data"
+              hx-trigger="change from:#sb-file"
+              hx-target="#sb-stage"
+              hx-swap="innerHTML show:top"
+              hx-indicator="#sb-loading"
+              @htmx:after-request="$refs.file.value = ''"
+              class="space-y-4">
+
+            <div class="flex flex-wrap items-center justify-center gap-3">
+                <div class="inline-flex rounded-full border border-neutral-800 bg-neutral-950 p-1">
+                    {% for value, label in [('plan', 'Study plan'), ('quiz', 'Quick quiz')] %}
+                    <label class="cursor-pointer">
+                        <input type="radio" name="mode" value="{{ value }}" x-model="mode" class="peer sr-only">
+                        <span class="block rounded-full px-4 py-1 text-sm text-neutral-500 transition hover:text-neutral-200 peer-checked:bg-white peer-checked:text-black peer-focus-visible:ring-2 peer-focus-visible:ring-white/40">{{ label }}</span>
+                    </label>
+                    {% endfor %}
+                </div>
+                <div x-show="mode === 'quiz'" x-cloak class="inline-flex items-center gap-2">
+                    <span class="sb-mono text-[11px] uppercase tracking-[0.2em] text-neutral-500">Questions</span>
+                    <div class="inline-flex rounded-full border border-neutral-800 bg-neutral-950 p-1">
+                        {% for n in [5, 10, 15] %}
+                        <label class="cursor-pointer">
+                            <input type="radio" name="num_questions" value="{{ n }}" class="peer sr-only" {% if n == 5 %}checked{% endif %}>
+                            <span class="sb-mono block rounded-full px-3 py-1 text-sm text-neutral-500 transition hover:text-neutral-200 peer-checked:bg-white peer-checked:text-black peer-focus-visible:ring-2 peer-focus-visible:ring-white/40">{{ n }}</span>
+                        </label>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+
+            <label for="sb-file"
+                   class="group relative block cursor-pointer rounded-3xl border border-dashed p-12 text-center transition duration-300 has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-white/30"
+                   :class="dragging ? 'scale-[1.01] border-white bg-neutral-900' : 'border-neutral-800 bg-neutral-950/60 hover:border-neutral-600 hover:bg-neutral-950'"
+                   @dragover.prevent="dragging = true"
+                   @dragleave.prevent="dragging = false"
+                   @drop.prevent="dragging = false; $refs.file.files = $event.dataTransfer.files; $refs.file.dispatchEvent(new Event('change', { bubbles: true }))">
+                <div class="mx-auto mb-5 flex h-14 w-14 items-center justify-center rounded-2xl border border-neutral-800 bg-neutral-900 transition duration-300 group-hover:-translate-y-0.5 group-hover:border-neutral-600">
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="text-neutral-300">
+                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M12 18v-6"/><path d="m9 15 3-3 3 3"/>
+                    </svg>
+                </div>
+                <p class="text-base text-neutral-100" x-text="fileName || 'Drop lecture slides, notes, or a textbook PDF'">Drop lecture slides, notes, or a textbook PDF</p>
+                <p class="sb-mono mt-2 text-xs text-neutral-500">or click to browse · PDF up to 20 MB</p>
+                <input id="sb-file" x-ref="file" type="file" name="file" accept=".pdf,application/pdf" class="sr-only"
+                       @change="fileName = $event.target.files[0]?.name || ''">
+            </label>
+        </form>
+
+        <div id="sb-loading" class="flex-col items-center gap-4 py-6">
+            <div class="h-7 w-7 animate-spin rounded-full border-[1.5px] border-neutral-800 border-t-white"></div>
+            <p class="sb-mono text-xs uppercase tracking-[0.2em] text-neutral-400" x-text="steps[mode][step] + '…'">Reading your PDF…</p>
+        </div>
+
+        <div id="sb-stage">{{ stage_html | safe }}</div>
+
+        <p class="sb-mono text-center text-[11px] uppercase tracking-[0.2em] text-neutral-700">Runs on localhost · Powered by Gemini</p>
+    </div>
+</div>
 {% endblock %}

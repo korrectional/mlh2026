@@ -1,0 +1,96 @@
+<div id="sb-q-{{ i }}" class="sb-reveal space-y-5 rounded-2xl border {{ 'border-neutral-700' if correct else 'border-neutral-800' }} bg-neutral-950 p-6">
+    <div class="flex items-center gap-3">
+        <span class="sb-mono text-xs text-neutral-500">{{ '%02d'|format(i + 1) }}</span>
+        <span class="h-px flex-1 bg-neutral-900"></span>
+        <span class="sb-mono rounded-full border border-neutral-800 px-2.5 py-0.5 text-[10px] uppercase tracking-[0.16em] text-neutral-500">{{ q.topic }}</span>
+        {% if correct %}
+        <span class="sb-mono rounded-full bg-white px-2.5 py-0.5 text-[10px] uppercase tracking-[0.16em] text-black">Correct</span>
+        {% else %}
+        <span class="sb-mono rounded-full border border-neutral-600 px-2.5 py-0.5 text-[10px] uppercase tracking-[0.16em] text-neutral-300">Missed</span>
+        {% endif %}
+    </div>
+    <p class="text-[17px] leading-relaxed text-neutral-100">{{ q.question }}</p>
+
+    <div class="grid gap-2">
+        {% for opt in q.options %}
+        {% set j = loop.index0 %}
+        {% if j == q.correct_index %}
+        <div class="flex items-start gap-3 rounded-xl border border-white bg-neutral-900 p-3.5">
+            <span class="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-white text-black">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+            </span>
+            <span class="pt-0.5 text-sm leading-relaxed text-white">{{ opt }}</span>
+        </div>
+        {% elif j == choice %}
+        <div class="flex items-start gap-3 rounded-xl border border-neutral-800 p-3.5">
+            <span class="flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-neutral-700 text-neutral-500">
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </span>
+            <span class="pt-0.5 text-sm leading-relaxed text-neutral-500 line-through decoration-neutral-600">{{ opt }}</span>
+        </div>
+        {% else %}
+        <div class="flex items-start gap-3 rounded-xl border border-neutral-900 p-3.5 opacity-50">
+            <span class="sb-mono flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-neutral-800 text-[11px] text-neutral-600">{{ "ABCD"[j] }}</span>
+            <span class="pt-0.5 text-sm leading-relaxed text-neutral-500">{{ opt }}</span>
+        </div>
+        {% endif %}
+        {% endfor %}
+    </div>
+
+    {% if explanation %}
+    <div class="relative overflow-hidden rounded-xl border border-neutral-800 bg-neutral-900/50 p-5 pl-6">
+        <span class="absolute inset-y-0 left-0 w-px bg-white"></span>
+        <p class="sb-mono mb-2 text-[10px] uppercase tracking-[0.2em] text-neutral-500">Let me explain</p>
+        <p class="whitespace-pre-line text-sm leading-relaxed text-neutral-300">{{ explanation }}</p>
+    </div>
+    {% endif %}
+</div>
+
+<span id="sb-score" hx-swap-oob="true" class="sb-mono shrink-0 text-xs text-neutral-400">{{ '%02d'|format(answered) }} / {{ '%02d'|format(total) }}<span class="text-neutral-600"> · </span>{{ num_correct }} correct</span>
+<div id="sb-progress" hx-swap-oob="true" class="h-px bg-white transition-all duration-700 ease-out" style="width: {{ (answered * 100 / total)|round(2) }}%"></div>
+
+{% if finished %}
+{% set pct = (num_correct * 100 / total)|round|int %}
+{% set circ = 226.19 %}
+{# innerHTML swap: an outerHTML swap would briefly insert the card unstyled (htmx settles "class"), so the scroll would measure the wrong height. #}
+<div id="sb-summary" hx-swap-oob="innerHTML">
+<div class="sb-reveal rounded-3xl bg-white p-8 text-black sm:p-10"
+     x-init="$el.scrollIntoView({ behavior: 'smooth', block: 'nearest' })">
+    <div class="flex items-center gap-8">
+        <div class="relative h-24 w-24 shrink-0">
+            <svg viewBox="0 0 80 80" class="h-24 w-24 -rotate-90">
+                <circle cx="40" cy="40" r="36" fill="none" stroke="#c3d3f5" stroke-width="4"/>
+                <circle class="sb-ring" cx="40" cy="40" r="36" fill="none" stroke="#060b1a" stroke-width="4" stroke-linecap="round"
+                        stroke-dasharray="{{ circ }}" stroke-dashoffset="{{ (circ * (1 - num_correct / total))|round(2) }}"/>
+            </svg>
+            <span class="sb-mono absolute inset-0 flex items-center justify-center text-lg font-medium">{{ pct }}%</span>
+        </div>
+        <div class="space-y-1">
+            <p class="sb-mono text-[11px] uppercase tracking-[0.2em] text-neutral-500">Results</p>
+            <p class="text-5xl font-semibold tracking-tight">{{ num_correct }}<span class="text-neutral-400">/{{ total }}</span></p>
+            <p class="text-neutral-600">
+                {% if pct >= 80 %}You know this material.{% elif pct >= 50 %}Solid. Tighten up the topics below.{% else %}Worth another pass before the exam.{% endif %}
+            </p>
+        </div>
+    </div>
+
+    {% if missed_topics %}
+    <div class="mt-8 space-y-3 border-t border-neutral-200 pt-6">
+        <p class="sb-mono text-[11px] uppercase tracking-[0.2em] text-neutral-500">Review these</p>
+        <div class="flex flex-wrap gap-2">
+            {% for t in missed_topics %}
+            <span class="rounded-full border border-neutral-300 px-3 py-1 text-sm">{{ t }}</span>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
+    <div class="mt-8">
+        <a href="/study-buddy" class="inline-flex items-center gap-2 rounded-full bg-black px-5 py-2.5 text-sm font-medium text-white transition hover:bg-neutral-800">
+            Try another PDF
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m13 6 6 6-6 6"/></svg>
+        </a>
+    </div>
+</div>
+</div>
+{% endif %}
