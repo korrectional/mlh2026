@@ -132,7 +132,6 @@ def test_timeline_block():
     assert results[2]["course"] == "ST 370 - Probability & Statistics"
 
     print("  ✅ test_timeline_block passed")
-    return results
 
 
 def test_course_overview_block():
@@ -169,7 +168,6 @@ def test_course_overview_block():
     assert results[0]["title"] == "Programming Assignment 5"
 
     print("  ✅ test_course_overview_block passed")
-    return results
 
 
 def test_generic_table():
@@ -201,7 +199,6 @@ def test_generic_table():
     assert results[0]["due_date"] == "12/15/2026"
 
     print("  ✅ test_generic_table passed")
-    return results
 
 
 def test_list_items():
@@ -219,7 +216,6 @@ def test_list_items():
     assert results[0]["title"] == "Reading Response 3"
 
     print("  ✅ test_list_items passed")
-    return results
 
 
 def test_empty_html():
@@ -371,7 +367,6 @@ def test_realistic_ncsu_moodle():
     assert results[2]["title"] == "Quiz 3 - Finite Automata"
 
     print("  ✅ test_realistic_ncsu_moodle passed")
-    return results
 
 
 if __name__ == "__main__":

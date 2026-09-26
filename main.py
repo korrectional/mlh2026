@@ -8,7 +8,6 @@ Three tools: Lecture Note-Taker, Study Buddy, Dashboard Inspector.
 from pathlib import Path
 from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
-from fastapi.templating import Jinja2Templates
 from fastapi.responses import HTMLResponse
 
 from routers import lecture, study_buddy, dashboard
@@ -19,8 +18,26 @@ app = FastAPI(title="MLH Toolkit", version="0.1.0")
 
 # ── Static files & templates ────────────────────────────────────────────
 BASE_DIR = Path(__file__).parent
-app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
-templates = Jinja2Templates(directory=BASE_DIR / "templates")
+STATIC_DIR = str(BASE_DIR / "static")
+TEMPLATES_DIR = str(BASE_DIR / "templates")
+
+app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+
+# ── Template rendering (direct Jinja2, bypass Starlette Jinja2Templates) ──
+from jinja2 import Environment, FileSystemLoader
+_jinja_env = Environment(
+    loader=FileSystemLoader(TEMPLATES_DIR),
+    cache_size=0,
+    auto_reload=True,
+)
+
+
+async def render_template(name: str, request: Request, **extra) -> str:
+    """Render a Jinja2 template with the given context."""
+    template = _jinja_env.get_template(name)
+    context = {"request": request, **extra}
+    return template.render(**context)
+
 
 # ── Routers ─────────────────────────────────────────────────────────────
 app.include_router(lecture.router)
@@ -31,7 +48,8 @@ app.include_router(dashboard.router)
 # ── Home ────────────────────────────────────────────────────────────────
 @app.get("/", response_class=HTMLResponse)
 async def home(request: Request):
-    return templates.TemplateResponse("index.html", {"request": request})
+    html = await render_template("index.html", request=request)
+    return HTMLResponse(html)
 
 
 # ── Startup health check ────────────────────────────────────────────────
@@ -42,6 +60,14 @@ async def startup():
         print("   Copy .env.example to .env and add your key.")
     else:
         print(f"✅ Gemini API key found ({GEMINI_API_KEY[:8]}...)")
+
+    # Verify templates load
+    for t in ["index.html", "base.html", "lecture.html", "study-buddy.html", "dashboard.html"]:
+        try:
+            _jinja_env.get_template(t)
+            print(f"   ✅ Template: {t}")
+        except Exception as e:
+            print(f"   ❌ Template: {t} — {e}")
 
 
 if __name__ == "__main__":

@@ -10,21 +10,34 @@ Flow:
 
 from fastapi import APIRouter, Request, Form
 from fastapi.responses import HTMLResponse
-from fastapi.templating import Jinja2Templates
 from pathlib import Path
 
 from services.moodle_scraper import parse_dashboard, extract_assignment_detail
 from services.gemini import ask_gemini, ask_gemini_structured
 
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
-templates = Jinja2Templates(directory=Path(__file__).resolve().parent.parent / "templates")
+
+# Direct Jinja2 (same setup as main.py)
+from jinja2 import Environment, FileSystemLoader
+_jinja_env = Environment(
+    loader=FileSystemLoader(str(Path(__file__).resolve().parent.parent / "templates")),
+    cache_size=0,
+    auto_reload=True,
+)
+
+
+async def render_template(name: str, request: Request, **extra) -> HTMLResponse:
+    """Render a Jinja2 template and return an HTMLResponse."""
+    template = _jinja_env.get_template(name)
+    context = {"request": request, **extra}
+    return HTMLResponse(template.render(**context))
 
 
 # ── Page ───────────────────────────────────────────────────────────────
 
 @router.get("/", response_class=HTMLResponse)
 async def dashboard_page(request: Request):
-    return templates.TemplateResponse("dashboard.html", {"request": request})
+    return await render_template("dashboard.html", request=request)
 
 
 # ── Debug: load sample HTML ──────────────────────────────────────────
