@@ -44,6 +44,17 @@
 </style>
 
 <script>
+    // The shared nav (base.html) has emoji labels; strip them on this page only for a cleaner look.
+    document.addEventListener('DOMContentLoaded', function () {
+        var emoji = /[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE0F}\u{200D}]/gu;
+        document.querySelectorAll('nav a').forEach(function (a) {
+            var walker = document.createTreeWalker(a, NodeFilter.SHOW_TEXT);
+            var node;
+            while ((node = walker.nextNode())) { node.nodeValue = node.nodeValue.replace(emoji, ''); }
+            a.innerHTML = a.innerHTML.trim();
+        });
+    });
+
     function studyBuddy() {
         return {
             dragging: false,
