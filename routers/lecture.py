@@ -11,7 +11,7 @@ from jinja2 import Environment, FileSystemLoader
 from services.audio_processor import (
     SAMPLE_RATE, SpeechServiceError, encode_mp3,
 )
-from services.create_notes import create_notes, transcribe_lecture
+from services.create_notes import create_notes, create_notes_and_concepts, transcribe_lecture
 
 router = APIRouter(prefix="/lecture", tags=["lecture"])
 _jinja_env = Environment(
@@ -60,9 +60,18 @@ async def lecture_websocket(websocket: WebSocket):
 
     async def generate_notes(final_audio: bytes):
         try:
-            notes = await create_notes(final_audio)
+            notes, concepts = await create_notes_and_concepts(final_audio)
             if notes.strip():
-                await events.put({"type": "notes", "text": notes.strip()})
+                await events.put({
+                    "type": "notes",
+                    "text": notes.strip(),
+                    "concepts": concepts,
+                })
+                if concepts:
+                    await events.put({
+                        "type": "concepts",
+                        "items": concepts,
+                    })
             else:
                 await events.put({"type": "notes_error", "message": "Gemini returned no notes for this recording."})
         except RuntimeError as exc:

@@ -11,17 +11,101 @@
             <h1 class="text-2xl font-bold">🎙️ Live Lecture Note-Taker</h1>
             <p class="text-sm text-gray-500">Record a lecture to generate full transcripts, AI study notes, and MP3 audio.</p>
         </div>
-        <div class="flex gap-2">
+        <div class="flex items-center gap-2">
             <button type="button" @click="toggleRecording" :disabled="starting || downloading"
                     :class="recording ? 'bg-red-600 hover:bg-red-700' : 'bg-brand-600 hover:bg-brand-700'"
-                    class="px-5 py-2.5 rounded-lg text-white font-medium text-sm transition flex items-center gap-2 disabled:opacity-50">
+                    class="px-5 py-2.5 rounded-lg text-white font-medium text-sm transition flex items-center gap-2 disabled:opacity-50 shadow-sm">
                 <span x-text="starting ? status : recording ? '⏹ Stop' : '🎤 Record'"></span>
             </button>
-            <button type="button" x-show="recordingAvailable && !recording" :disabled="downloading"
-                    @click="downloadRecording()"
-                    class="px-4 py-2.5 rounded-lg bg-white border text-gray-700 hover:bg-gray-100 font-medium text-sm transition disabled:opacity-50">
-                <span x-text="downloading ? 'Downloading...' : 'Download MP3'"></span>
-            </button>
+
+            <!-- Split Download Button -->
+            <div x-show="recordingAvailable && !recording" class="relative inline-flex rounded-lg shadow-sm"
+                 @click.outside="downloadDropdownOpen = false">
+                <!-- Default Button: Download Notes -->
+                <button type="button" @click="downloadDefaultNotes()"
+                        :disabled="notesLoading || !notes"
+                        class="px-4 py-2.5 rounded-l-lg bg-white border border-gray-300 text-gray-700 hover:bg-gray-50 font-medium text-sm transition flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed">
+                    <span>📥</span>
+                    <span x-text="notesLoading ? 'Notes Generating...' : 'Download Notes'"></span>
+                </button>
+
+                <!-- Dropdown Trigger Button -->
+                <button type="button" @click="downloadDropdownOpen = !downloadDropdownOpen"
+                        class="px-2.5 py-2.5 rounded-r-lg bg-white border-t border-r border-b border-gray-300 text-gray-600 hover:bg-gray-50 font-medium text-sm transition -ml-px hover:text-gray-900 focus:outline-none"
+                        title="Download options">
+                    <svg class="w-4 h-4 transition-transform duration-200" :class="downloadDropdownOpen ? 'rotate-180' : ''"
+                         fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+                    </svg>
+                </button>
+
+                <!-- Dropdown Menu -->
+                <div x-show="downloadDropdownOpen"
+                     x-transition:enter="transition ease-out duration-100"
+                     x-transition:enter-start="transform opacity-0 scale-95"
+                     x-transition:enter-end="transform opacity-100 scale-100"
+                     x-transition:leave="transition ease-in duration-75"
+                     x-transition:leave-start="transform opacity-100 scale-100"
+                     x-transition:leave-end="transform opacity-0 scale-95"
+                     class="absolute right-0 top-full mt-2 w-72 rounded-xl bg-white shadow-xl border border-gray-200 p-4 z-50 text-sm"
+                     style="display: none;">
+
+                    <div class="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1">
+                        Download Options
+                    </div>
+                    <p class="text-xs text-gray-500 mb-3">
+                        Choose any combination of lecture materials:
+                    </p>
+
+                    <!-- Combination Checkboxes -->
+                    <div class="space-y-1.5 mb-3">
+                        <label class="flex items-center gap-2.5 p-2 rounded-lg hover:bg-gray-50 cursor-pointer border border-transparent hover:border-gray-200 transition">
+                            <input type="checkbox" x-model="exportOptions.notes" class="rounded text-brand-600 focus:ring-brand-500 w-4 h-4">
+                            <div class="flex-1 min-w-0">
+                                <span class="font-medium text-gray-800 text-xs block">📝 Lecture Notes</span>
+                                <span class="text-[11px] text-gray-400 block" x-text="notes ? 'Ready' : notesLoading ? 'Generating...' : 'Not available'"></span>
+                            </div>
+                        </label>
+
+                        <label class="flex items-center gap-2.5 p-2 rounded-lg hover:bg-gray-50 cursor-pointer border border-transparent hover:border-gray-200 transition">
+                            <input type="checkbox" x-model="exportOptions.transcript" class="rounded text-brand-600 focus:ring-brand-500 w-4 h-4">
+                            <div class="flex-1 min-w-0">
+                                <span class="font-medium text-gray-800 text-xs block">🎙️ Transcript</span>
+                                <span class="text-[11px] text-gray-400 block" x-text="transcript.length > 0 ? 'Ready' : transcriptionLoading ? 'Transcribing...' : 'Not available'"></span>
+                            </div>
+                        </label>
+
+                        <label class="flex items-center gap-2.5 p-2 rounded-lg hover:bg-gray-50 cursor-pointer border border-transparent hover:border-gray-200 transition">
+                            <input type="checkbox" x-model="exportOptions.concepts" class="rounded text-brand-600 focus:ring-brand-500 w-4 h-4">
+                            <div class="flex-1 min-w-0">
+                                <span class="font-medium text-gray-800 text-xs block">⚠️ Concepts to Review</span>
+                                <span class="text-[11px] text-gray-400 block" x-text="concepts.length > 0 ? (concepts.length + ' items') : notesLoading ? 'Analyzing...' : 'Not available'"></span>
+                            </div>
+                        </label>
+                    </div>
+
+                    <!-- Download Selected Action -->
+                    <button type="button" @click="downloadCombined(); downloadDropdownOpen = false;"
+                            :disabled="!exportOptions.notes && !exportOptions.transcript && !exportOptions.concepts"
+                            class="w-full py-2 px-3 bg-brand-600 hover:bg-brand-700 disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-medium rounded-lg transition text-center shadow-sm">
+                        📥 Download Selected (.md)
+                    </button>
+
+                    <!-- Divider -->
+                    <div class="border-t border-gray-100 my-3"></div>
+
+                    <!-- Audio Recording Link -->
+                    <button type="button" @click="downloadRecording(); downloadDropdownOpen = false;"
+                            :disabled="downloading"
+                            class="w-full text-left py-2 px-2.5 rounded-lg hover:bg-gray-50 text-xs text-gray-700 flex items-center justify-between transition disabled:opacity-50">
+                        <span class="flex items-center gap-1.5 font-medium">
+                            <span>🎵</span>
+                            <span>Audio Recording (.mp3)</span>
+                        </span>
+                        <span class="text-[10px] text-gray-400 font-mono" x-text="downloading ? 'Downloading...' : 'MP3'"></span>
+                    </button>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -52,7 +136,7 @@
             <h2 class="text-sm font-semibold text-gray-400 uppercase tracking-wide mb-3">Notes</h2>
             <p x-show="notesLoading" class="text-sm text-gray-500 italic py-8 text-center">Generating notes with Gemini...</p>
             <p x-show="notesError" x-text="notesError" role="alert" class="text-sm text-red-700 bg-red-50 rounded-lg p-3"></p>
-            <div x-show="notes" x-text="notes" class="text-sm text-gray-800 whitespace-pre-wrap leading-relaxed"></div>
+            <p x-show="notes" x-text="notes" class="text-sm text-gray-800 leading-relaxed whitespace-pre-wrap"></p>
             <p x-show="!notes && !notesLoading && !notesError" class="text-gray-400 text-sm italic py-8 text-center">
                 Notes will appear here after you stop recording.
             </p>
@@ -64,7 +148,7 @@
             <p x-show="transcriptionLoading" class="text-sm text-gray-500 italic py-8 text-center">Transcribing full lecture audio...</p>
             <div class="space-y-3" aria-live="polite" x-show="!transcriptionLoading">
                 <template x-for="(entry, index) in transcript" :key="index">
-                    <p class="p-3 bg-gray-50 rounded-lg border-l-4 border-l-brand-500 text-sm text-gray-800 whitespace-pre-wrap leading-relaxed" x-text="entry"></p>
+                    <p class="p-3 bg-gray-50 rounded-lg border-l-4 border-l-brand-500 text-sm text-gray-800 leading-relaxed" x-text="entry"></p>
                 </template>
                 <p x-show="transcript.length === 0 && !transcriptionLoading && !transcriptionError" class="text-gray-400 text-sm italic py-8 text-center">
                     Transcript will appear here after you stop recording.
@@ -73,10 +157,59 @@
             </div>
         </div>
 
-        <!-- Flags sidebar -->
+        <!-- Flags sidebar / Concepts to Review -->
         <div class="lg:col-span-2 bg-white rounded-xl border p-5">
-            <h2 class="text-sm font-semibold text-gray-400 uppercase tracking-wide mb-3">⚠️ Concepts to Review</h2>
-            <p class="text-gray-400 text-sm italic py-8 text-center">Concepts to review will show up here when AI notes are available.</p>
+            <div class="flex items-center justify-between mb-4">
+                <div class="flex items-center gap-2">
+                    <h2 class="text-sm font-semibold text-gray-500 uppercase tracking-wide">⚠️ Concepts to Review</h2>
+                    <span x-show="concepts.length > 0" x-text="concepts.length"
+                          class="px-2 py-0.5 rounded-full text-xs font-semibold bg-amber-100 text-amber-800"></span>
+                </div>
+            </div>
+
+            <!-- Loading state -->
+            <div x-show="notesLoading" class="py-8 text-center">
+                <div class="inline-block w-6 h-6 border-2 border-amber-300 border-t-amber-600 rounded-full animate-spin mb-2"></div>
+                <p class="text-sm text-gray-500 italic">Analyzing lecture for concepts to review...</p>
+            </div>
+
+            <!-- Empty / initial state -->
+            <p x-show="!notesLoading && concepts.length === 0 && !notes" class="text-gray-400 text-sm italic py-8 text-center">
+                Concepts flagged for review will appear here after AI notes are generated.
+            </p>
+
+            <!-- No difficult concepts found state -->
+            <p x-show="!notesLoading && concepts.length === 0 && notes" class="text-gray-500 text-sm italic py-4 text-center bg-gray-50 rounded-lg border">
+                ✅ No specific review flags detected — material appears straightforward.
+            </p>
+
+            <!-- Concepts cards list -->
+            <div x-show="concepts.length > 0" class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <template x-for="(item, idx) in concepts" :key="idx">
+                    <div class="p-4 rounded-xl border border-amber-200 bg-amber-50/50 hover:bg-amber-50 transition space-y-2">
+                        <div class="flex items-start justify-between gap-2">
+                            <h3 class="font-semibold text-gray-900 text-sm flex items-center gap-1.5">
+                                <span class="text-amber-600 font-bold">📌</span>
+                                <span x-text="item.concept"></span>
+                            </h3>
+                            <span class="px-2 py-0.5 rounded text-[11px] font-medium bg-amber-100 text-amber-800 whitespace-nowrap">
+                                Review Focus
+                            </span>
+                        </div>
+                        <p x-show="item.reason" class="text-xs text-gray-700 leading-relaxed">
+                            <strong class="font-medium text-amber-900">Why review:</strong>
+                            <span x-text="item.reason"></span>
+                        </p>
+                        <div x-show="item.tip" class="p-2.5 bg-white/90 rounded-lg border border-amber-100 text-xs text-gray-600 flex items-start gap-2">
+                            <span class="text-amber-500 font-bold">💡</span>
+                            <div>
+                                <span class="font-medium text-gray-800">Study Tip:</span>
+                                <span x-text="item.tip"></span>
+                            </div>
+                        </div>
+                    </div>
+                </template>
+            </div>
         </div>
 
     </div>
@@ -104,6 +237,13 @@ function lectureRecorder() {
         notes: '',
         notesLoading: false,
         notesError: '',
+        concepts: [],
+        downloadDropdownOpen: false,
+        exportOptions: {
+            notes: true,
+            transcript: true,
+            concepts: true
+        },
         stream: null,
         audioContext: null,
         source: null,
@@ -175,6 +315,13 @@ function lectureRecorder() {
                     } else if (message.type === 'notes') {
                         this.notes = message.text;
                         this.notesLoading = false;
+                        if (Array.isArray(message.concepts)) {
+                            this.concepts = message.concepts;
+                        }
+                    } else if (message.type === 'concepts') {
+                        if (Array.isArray(message.items)) {
+                            this.concepts = message.items;
+                        }
                     } else if (message.type === 'notes_error') {
                         this.notesError = message.message;
                         this.notesLoading = false;
@@ -281,6 +428,7 @@ function lectureRecorder() {
                 this.transcriptionStatus = '';
                 this.transcript = [];
                 this.notes = '';
+                this.concepts = [];
                 this.notesError = '';
                 this.notesLoading = false;
                 this.receivedChunks = 0;
@@ -319,6 +467,7 @@ function lectureRecorder() {
                 this.transcriptionError = '';
                 this.transcript = [];
                 this.notes = '';
+                this.concepts = [];
                 this.ws.send(JSON.stringify({ type: 'stop' }));
             } else {
                 this.ws?.close();
@@ -327,6 +476,67 @@ function lectureRecorder() {
                 this.status = this.connectionLost ? 'Server connection lost.' : 'No audio was captured.';
                 this.starting = false;
             }
+        },
+
+        downloadDefaultNotes() {
+            if (!this.notes) {
+                alert('Notes are not available yet.');
+                return;
+            }
+            const dateStr = new Date().toLocaleDateString(undefined, {
+                year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
+            });
+            const content = `# Lecture Notes\n\n*Generated: ${dateStr}*\n\n---\n\n${this.notes}\n`;
+            downloadBlob(new Blob([content], { type: 'text/markdown;charset=utf-8' }), 'lecture-notes.md');
+            this.status = 'Notes downloaded.';
+        },
+
+        downloadCombined() {
+            const parts = [];
+            const dateStr = new Date().toLocaleDateString(undefined, {
+                year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
+            });
+            parts.push(`# Lecture Materials & Study Guide\n*Exported: ${dateStr}*\n`);
+
+            if (this.exportOptions.notes) {
+                parts.push(`---\n\n## 📝 Structured Notes\n\n${this.notes || '_No notes available._'}\n`);
+            }
+
+            if (this.exportOptions.concepts) {
+                parts.push(`---\n\n## ⚠️ Concepts to Review\n`);
+                if (this.concepts && this.concepts.length > 0) {
+                    this.concepts.forEach((c, i) => {
+                        parts.push(`### ${i + 1}. ${c.concept}\n- **Why Review:** ${c.reason}\n- **Study Tip:** ${c.tip}\n`);
+                    });
+                } else {
+                    parts.push(`_No specific review concepts flagged._\n`);
+                }
+            }
+
+            if (this.exportOptions.transcript) {
+                parts.push(`---\n\n## 🎙️ Transcript\n`);
+                if (this.transcript && this.transcript.length > 0) {
+                    parts.push(this.transcript.join('\n\n') + '\n');
+                } else {
+                    parts.push(`_No transcript available._\n`);
+                }
+            }
+
+            if (!this.exportOptions.notes && !this.exportOptions.transcript && !this.exportOptions.concepts) {
+                alert('Please select at least one option to download.');
+                return;
+            }
+
+            const filename = (this.exportOptions.notes && !this.exportOptions.transcript && !this.exportOptions.concepts)
+                ? 'lecture-notes.md'
+                : (!this.exportOptions.notes && this.exportOptions.transcript && !this.exportOptions.concepts)
+                ? 'lecture-transcript.md'
+                : (!this.exportOptions.notes && !this.exportOptions.transcript && this.exportOptions.concepts)
+                ? 'lecture-concepts-to-review.md'
+                : 'lecture-study-materials.md';
+
+            downloadBlob(new Blob([parts.join('\n')], { type: 'text/markdown;charset=utf-8' }), filename);
+            this.status = 'Selected materials downloaded.';
         },
 
         downloadRecording() {

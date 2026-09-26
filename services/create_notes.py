@@ -2,6 +2,7 @@
 
 import asyncio
 from io import BytesIO
+import json
 import wave
 
 from google.genai import types
@@ -67,12 +68,42 @@ async def transcribe_lecture(audio_data: bytes) -> str:
     return await asyncio.to_thread(transcribe_audio, audio_data)
 
 
-async def create_notes(audio_data: bytes) -> str:
-    """Send 16 kHz mono, 16-bit PCM lecture audio to Gemini and return notes.
+def _parse_notes_and_concepts(response_text: str) -> tuple[str, list[dict]]:
+    """Parse Gemini response into markdown notes and a list of review concepts."""
+    cleaned = response_text.strip()
+    if cleaned.startswith("```"):
+        lines = cleaned.split("\n")
+        if lines and lines[0].startswith("```"):
+            lines = lines[1:]
+        if lines and lines[-1].startswith("```"):
+            lines = lines[:-1]
+        cleaned = "\n".join(lines).strip()
 
-    The shared Gemini client reads GEMINI_API_KEY from the local environment
-    (including .env). This function expects the finalized audio buffer, not
-    individual WebSocket packets.
+    try:
+        data = json.loads(cleaned)
+        if isinstance(data, dict):
+            notes = data.get("notes", "")
+            raw_concepts = data.get("concepts", [])
+            concepts = []
+            if isinstance(raw_concepts, list):
+                for item in raw_concepts:
+                    if isinstance(item, dict) and item.get("concept"):
+                        concepts.append({
+                            "concept": str(item.get("concept", "")).strip(),
+                            "reason": str(item.get("reason", "")).strip(),
+                            "tip": str(item.get("tip", "")).strip(),
+                        })
+            return (notes if isinstance(notes, str) else str(notes), concepts)
+    except Exception:
+        pass
+
+    return (response_text, [])
+
+
+async def create_notes_and_concepts(audio_data: bytes) -> tuple[str, list[dict]]:
+    """Send 16 kHz mono, 16-bit PCM lecture audio to Gemini.
+
+    Returns a tuple of (notes_markdown, list_of_concepts_to_review).
     """
     if not audio_data or len(audio_data) % 2:
         raise ValueError("Audio must be non-empty 16-bit PCM data.")
@@ -89,9 +120,19 @@ async def create_notes(audio_data: bytes) -> str:
         output.writeframes(audio_data)
 
     prompt = (
-        "Write clear, structured study notes from this lecture audio. "
-        "Include key ideas and concise explanations. Do not invent details."
+        "Analyze this lecture audio and output a JSON object with two fields:\n"
+        "1. 'notes': Comprehensive, clean, structured study notes formatted with Markdown headings, bullet points, and key takeaways.\n"
+        "2. 'concepts': A list of difficult, crucial, or confusing concepts from the lecture that students should review. "
+        "For each concept, provide 'concept' (short title), 'reason' (why it is tricky or important), and 'tip' (actionable study tip).\n\n"
+        "Return valid JSON matching this schema:\n"
+        "{\n"
+        '  "notes": "string",\n'
+        '  "concepts": [\n'
+        '    {"concept": "string", "reason": "string", "tip": "string"}\n'
+        '  ]\n'
+        "}"
     )
+
     if wav.tell() <= 18 * 1024 * 1024:
         response = await client.aio.models.generate_content(
             model=DEFAULT_MODEL,
@@ -114,4 +155,11 @@ async def create_notes(audio_data: bytes) -> str:
                 await client.aio.files.delete(name=uploaded.name)
             except Exception:
                 pass
-    return response.text or ""
+
+    return _parse_notes_and_concepts(response.text or "")
+
+
+async def create_notes(audio_data: bytes) -> str:
+    """Send 16 kHz mono, 16-bit PCM lecture audio to Gemini and return notes string."""
+    notes, _ = await create_notes_and_concepts(audio_data)
+    return notes
