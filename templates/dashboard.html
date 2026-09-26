@@ -53,11 +53,12 @@
 <div x-data="dashboardInspector()" class="space-y-6 pb-12">
 
     <!-- Hero -->
-    <section class="relative flex min-h-[300px] items-end overflow-hidden rounded-3xl border border-neutral-800 bg-neutral-950">
-        <img src="https://thumb.wikimedia.org/wikipedia/commons/thumb/c/ca/NCSU_campus_043.JPG/1920px-NCSU_campus_043.JPG"
-             alt="Memorial Belltower at NC State"
-             class="absolute inset-0 h-full w-full object-cover grayscale contrast-125 opacity-50">
-        <div aria-hidden="true" class="absolute inset-0 bg-gradient-to-t from-[#0a0a0a] via-[#0a0a0a]/75 to-[#0a0a0a]/10"></div>
+    <section class="relative flex min-h-[380px] items-end overflow-hidden rounded-3xl border border-neutral-800 bg-neutral-950">
+        <img src="/static/img/fitts-woolard-hall.webp"
+             alt="Fitts-Woolard Hall at NC State"
+             class="absolute inset-0 h-full w-full object-cover object-center">
+        <div aria-hidden="true" class="absolute inset-0 bg-gradient-to-t from-[#0a0a0a] via-[#0a0a0a]/50 to-transparent"></div>
+        <div aria-hidden="true" class="absolute inset-0 bg-gradient-to-r from-[#0a0a0a]/70 via-[#0a0a0a]/20 to-transparent"></div>
         <div aria-hidden="true" class="absolute inset-x-0 top-0 h-0.5 bg-[#CC0000]"></div>
 
         <div class="relative max-w-2xl space-y-4 p-6 pb-12 sm:p-10 sm:pb-12">
@@ -66,17 +67,16 @@
                 NC State · Moodle
             </span>
             <h1 class="text-4xl font-semibold leading-[1.05] tracking-tight text-white sm:text-5xl">
-                Everything due.<br><span class="text-neutral-400">Sorted and ready to study.</span>
+                Everything due.<br><span class="text-neutral-300">Sorted and ready to study.</span>
             </h1>
             <p class="max-w-lg leading-relaxed text-neutral-300">
                 Scan your NCSU Moodle dashboard for assignments due soon, then turn each one into study points and a practice quiz.
             </p>
         </div>
 
-        <a href="https://commons.wikimedia.org/wiki/File:NCSU_campus_043.JPG" target="_blank" rel="noopener"
-           class="dash-mono absolute bottom-3 right-4 text-[10px] text-neutral-500 transition hover:text-neutral-300">
-            Photo: Haruhide000 · CC BY-SA 3.0
-        </a>
+        <span class="dash-mono absolute bottom-3 right-4 text-[10px] uppercase tracking-[0.16em] text-neutral-400">
+            Fitts-Woolard Hall · NC State
+        </span>
     </section>
 
     <!-- Step 1: Confirm logged in -->

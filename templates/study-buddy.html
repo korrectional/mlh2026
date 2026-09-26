@@ -76,17 +76,25 @@
 
     <div class="relative mx-auto max-w-2xl space-y-10 pb-12" x-data="studyBuddy()" @htmx:before-request.window="step = 0">
 
-        <header class="space-y-5 pt-10 text-center">
-            <span class="sb-mono inline-flex items-center gap-2 rounded-full border border-neutral-800 bg-neutral-950/80 px-3 py-1 text-[11px] uppercase tracking-[0.2em] text-neutral-400">
-                <span class="h-1.5 w-1.5 animate-pulse rounded-full bg-neutral-100"></span>
-                Study Buddy
-            </span>
-            <h1 class="text-4xl font-semibold leading-[1.05] tracking-tight text-white sm:text-5xl">
-                Drop your notes.<br><span class="text-neutral-500">Get a plan.</span>
-            </h1>
-            <p class="mx-auto max-w-md leading-relaxed text-neutral-400">
-                Study Buddy scores how complex your material is, estimates how long it takes to learn, and turns it into daily sessions that fit the time you actually have.
-            </p>
+        <header class="grid items-center gap-8 pt-10 sm:grid-cols-[1.15fr_0.85fr]">
+            <div class="space-y-5 text-center sm:text-left">
+                <span class="sb-mono inline-flex items-center gap-2 rounded-full border border-neutral-800 bg-neutral-950/80 px-3 py-1 text-[11px] uppercase tracking-[0.2em] text-neutral-400">
+                    <span class="h-1.5 w-1.5 animate-pulse rounded-full bg-neutral-100"></span>
+                    Study Buddy
+                </span>
+                <h1 class="text-4xl font-semibold leading-[1.05] tracking-tight text-white sm:text-5xl">
+                    Drop your notes.<br><span class="text-neutral-500">Get a plan.</span>
+                </h1>
+                <p class="mx-auto max-w-md leading-relaxed text-neutral-400 sm:mx-0">
+                    Study Buddy scores how complex your material is, estimates how long it takes to learn, and turns it into daily sessions that fit the time you actually have.
+                </p>
+            </div>
+            <figure class="relative mx-auto w-full max-w-xs overflow-hidden rounded-3xl border border-neutral-800 bg-neutral-950 sm:max-w-none">
+                <img src="/static/img/study-library.png" alt="A student reading between library shelves"
+                     class="h-72 w-full object-cover object-[center_30%] grayscale sm:h-80">
+                <div aria-hidden="true" class="absolute inset-0 bg-gradient-to-t from-[#0a0a0a]/80 via-transparent to-transparent"></div>
+                <figcaption class="sb-mono absolute bottom-3 left-4 text-[10px] uppercase tracking-[0.16em] text-neutral-400">In the stacks · NC State</figcaption>
+            </figure>
         </header>
 
         <form id="sb-upload"
